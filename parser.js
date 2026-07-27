@@ -10,7 +10,7 @@
 
 const cheerio = require('cheerio');
 
-const MAX_RESULTS = 6;
+const MAX_RESULTS = 60;
 
 // ─── Utilities ───────────────────────────────────────────────────────────────
 

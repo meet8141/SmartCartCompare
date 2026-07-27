@@ -21,6 +21,13 @@ mongoose.connect(process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/smartcart
   .then(() => console.log('Connected to MongoDB'))
   .catch(err => console.error('MongoDB connection error:', err));
 
+// Routes
+app.use('/api/auth', require('./routes/auth'));
+app.use('/api/history', require('./routes/history'));
+app.use('/api/admin', require('./routes/admin'));
+
+const { optionalAuth } = require('./middleware/auth');
+app.use('/api/history/view', optionalAuth, require('./routes/view'));
 
 // ── Browser-realistic user-agents ────────────────────────────────────────────
 const USER_AGENTS = [
@@ -97,60 +104,124 @@ function rateLimiter(req, res, next) {
 }
 
 // ── GET /api/product-details?product=<query> ─────────────────────────────────
-app.get('/api/product-details', rateLimiter, async (req, res) => {
+app.get('/api/product-details', rateLimiter, optionalAuth, async (req, res) => {
   const query = req.query.product;
   if (!query || !query.trim()) {
     return res.status(400).json({ error: 'Missing "product" query parameter' });
   }
 
   const cleanQuery = query.trim().toLowerCase();
+  const fromHistory = req.query.fromHistory === 'true';
+  const noStore = req.query.noStore === 'true';
 
   try {
-    // 1. Log search history
-    await SearchHistory.create({ query: cleanQuery });
+    console.log("Search request for:", cleanQuery);
+    console.log("Auth header:", req.header('Authorization'));
+    console.log("req.user is:", req.user ? req.user._id : "undefined");
+
+    // 1. Log search history ONLY if it's a new search AND noStore is false
+    if (!fromHistory && !noStore) {
+      if (req.user) {
+        await SearchHistory.findOneAndUpdate(
+          { query: cleanQuery, user: req.user._id },
+          { timestamp: new Date() },
+          { upsert: true, new: true }
+        );
+      } else {
+        await SearchHistory.create({ query: cleanQuery });
+      }
+    }
 
     // 2. Check Cache
-    const cachedData = await ProductCache.findOne({ query: cleanQuery });
-    if (cachedData) {
-      return res.json({
-        query: cleanQuery,
-        amazon: cachedData.amazon,
-        flipkart: cachedData.flipkart,
-        cached: true,
-      });
+    if (!noStore) {
+      const cachedData = await ProductCache.findOne({ query: cleanQuery });
+      if (cachedData) {
+        return res.json({
+          query: cleanQuery,
+          amazon: cachedData.amazon,
+          flipkart: cachedData.flipkart,
+          cached: true,
+        });
+      }
     }
 
     // 3. Scrape if not in cache
-    const encoded     = encodeURIComponent(query.trim());
-    const amazonUrl   = `https://www.amazon.in/s?k=${encoded}`;
-    const flipkartUrl = `https://www.flipkart.com/search?q=${encoded}`;
+    const encoded = encodeURIComponent(query.trim());
+    
+    // We want pages 1, 2, 3
+    const pagesToFetch = [1, 2, 3];
+    const amazonUrls = pagesToFetch.map(p => `https://www.amazon.in/s?k=${encoded}&page=${p}`);
+    const flipkartUrls = pagesToFetch.map(p => `https://www.flipkart.com/search?q=${encoded}&page=${p}`);
 
-    // Fetch both pages concurrently
-    const [amazonResult, flipkartResult] = await Promise.all([
-      fetchHtml(amazonUrl),
-      fetchHtml(flipkartUrl),
-    ]);
+    // Fetch all concurrently (6 requests)
+    const allFetchPromises = [
+      ...amazonUrls.map(url => fetchHtml(url)),
+      ...flipkartUrls.map(url => fetchHtml(url))
+    ];
+    
+    const fetchResults = await Promise.all(allFetchPromises);
+    
+    // Process Amazon
+    const amazonFetchResults = fetchResults.slice(0, 3);
+    let amazonProducts = [];
+    let amazonError = null;
+    for (const res of amazonFetchResults) {
+      if (res.ok) {
+        const parsed = parseAmazon(res.html);
+        if (parsed.products && parsed.products.length > 0) {
+          amazonProducts = amazonProducts.concat(parsed.products);
+        } else if (parsed.error && !amazonError) {
+          amazonError = parsed.error;
+        }
+      } else if (!amazonError) {
+        amazonError = res.error || 'Fetch failed';
+      }
+    }
+    
+    // Process Flipkart
+    const flipkartFetchResults = fetchResults.slice(3, 6);
+    let flipkartProducts = [];
+    let flipkartError = null;
+    for (const res of flipkartFetchResults) {
+      if (res.ok) {
+        const parsed = parseFlipkart(res.html);
+        if (parsed.products && parsed.products.length > 0) {
+          flipkartProducts = flipkartProducts.concat(parsed.products);
+        } else if (parsed.error && !flipkartError) {
+          flipkartError = parsed.error;
+        }
+      } else if (!flipkartError) {
+        flipkartError = res.error || 'Fetch failed';
+      }
+    }
 
-    // Parse; parsers return { source, products[], error? }
-    const amazonData   = amazonResult.ok
-      ? parseAmazon(amazonResult.html)
-      : { source: 'amazon',   products: [], error: amazonResult.error || 'Fetch failed' };
+    // Deduplicate by URL to avoid overlapping pages
+    const uniqueAmazon = Array.from(new Map(amazonProducts.map(p => [p.productLink, p])).values());
+    const uniqueFlipkart = Array.from(new Map(flipkartProducts.map(p => [p.productLink, p])).values());
 
-    const flipkartData = flipkartResult.ok
-      ? parseFlipkart(flipkartResult.html)
-      : { source: 'flipkart', products: [], error: flipkartResult.error || 'Fetch failed' };
+    const amazonData = {
+      source: 'amazon',
+      products: uniqueAmazon,
+      searchUrl: amazonUrls[0], // link to first page
+      error: uniqueAmazon.length === 0 ? (amazonError || 'Fetch failed') : undefined
+    };
 
-    // Attach source URLs for debugging
-    amazonData.searchUrl   = amazonUrl;
-    flipkartData.searchUrl = flipkartUrl;
+    const flipkartData = {
+      source: 'flipkart',
+      products: uniqueFlipkart,
+      searchUrl: flipkartUrls[0],
+      error: uniqueFlipkart.length === 0 ? (flipkartError || 'Fetch failed') : undefined
+    };
 
     // 4. Save to Cache
-    const newCache = new ProductCache({
-      query: cleanQuery,
-      amazon: amazonData,
-      flipkart: flipkartData,
-    });
-    await newCache.save();
+    if (!noStore) {
+      const newCache = new ProductCache({
+        query: cleanQuery,
+        amazon: amazonData,
+        flipkart: flipkartData,
+      });
+      await newCache.save();
+    }
 
     res.json({
       query: cleanQuery,
