@@ -8,6 +8,7 @@ const mongoose = require('mongoose');
 const { parseAmazon, parseFlipkart } = require('./parser');
 const ProductCache = require('./models/ProductCache');
 const SearchHistory = require('./models/SearchHistory');
+const { matchAllProducts, rankProducts } = require('./matcher');
 
 const app  = express();
 const PORT = process.env.PORT || 3000;
@@ -28,6 +29,7 @@ app.use('/api/admin', require('./routes/admin'));
 
 const { optionalAuth } = require('./middleware/auth');
 app.use('/api/history/view', optionalAuth, require('./routes/view'));
+app.use('/api/products/compare', require('./routes/compare'));
 
 // ── Browser-realistic user-agents ────────────────────────────────────────────
 const USER_AGENTS = [
@@ -82,7 +84,7 @@ function rateLimiter(req, res, next) {
   const ip = req.ip || req.connection.remoteAddress || 'unknown';
   const now = Date.now();
   const windowMs = 60 * 1000; // 1 minute
-  const maxRequests = 2;
+  const maxRequests = 30; // Increased for development/testing
 
   if (!rateLimitMap.has(ip)) {
     rateLimitMap.set(ip, []);
@@ -148,12 +150,12 @@ app.get('/api/product-details', rateLimiter, optionalAuth, async (req, res) => {
     // 3. Scrape if not in cache
     const encoded = encodeURIComponent(query.trim());
     
-    // We want pages 1, 2, 3
-    const pagesToFetch = [1, 2, 3];
+    // We want page 1 only to optimize response time
+    const pagesToFetch = [1];
     const amazonUrls = pagesToFetch.map(p => `https://www.amazon.in/s?k=${encoded}&page=${p}`);
     const flipkartUrls = pagesToFetch.map(p => `https://www.flipkart.com/search?q=${encoded}&page=${p}`);
 
-    // Fetch all concurrently (6 requests)
+    // Fetch all concurrently
     const allFetchPromises = [
       ...amazonUrls.map(url => fetchHtml(url)),
       ...flipkartUrls.map(url => fetchHtml(url))
@@ -162,7 +164,7 @@ app.get('/api/product-details', rateLimiter, optionalAuth, async (req, res) => {
     const fetchResults = await Promise.all(allFetchPromises);
     
     // Process Amazon
-    const amazonFetchResults = fetchResults.slice(0, 3);
+    const amazonFetchResults = fetchResults.slice(0, pagesToFetch.length);
     let amazonProducts = [];
     let amazonError = null;
     for (const res of amazonFetchResults) {
@@ -179,7 +181,7 @@ app.get('/api/product-details', rateLimiter, optionalAuth, async (req, res) => {
     }
     
     // Process Flipkart
-    const flipkartFetchResults = fetchResults.slice(3, 6);
+    const flipkartFetchResults = fetchResults.slice(pagesToFetch.length, pagesToFetch.length * 2);
     let flipkartProducts = [];
     let flipkartError = null;
     for (const res of flipkartFetchResults) {
@@ -196,8 +198,15 @@ app.get('/api/product-details', rateLimiter, optionalAuth, async (req, res) => {
     }
 
     // Deduplicate by URL to avoid overlapping pages
-    const uniqueAmazon = Array.from(new Map(amazonProducts.map(p => [p.productLink, p])).values());
-    const uniqueFlipkart = Array.from(new Map(flipkartProducts.map(p => [p.productLink, p])).values());
+    let uniqueAmazon = Array.from(new Map(amazonProducts.map(p => [p.productLink, p])).values());
+    let uniqueFlipkart = Array.from(new Map(flipkartProducts.map(p => [p.productLink, p])).values());
+    
+    // Filter and rank products to prioritize relevant matches (e.g., phones over cases)
+    uniqueAmazon = rankProducts(uniqueAmazon, cleanQuery).slice(0, 5);
+    uniqueFlipkart = rankProducts(uniqueFlipkart, cleanQuery).slice(0, 5);
+
+    // Group matching products before saving to Cache
+    matchAllProducts(uniqueAmazon, uniqueFlipkart);
 
     const amazonData = {
       source: 'amazon',

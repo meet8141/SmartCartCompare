@@ -1,7 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useContext } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { AuthContext } from '../contexts/AuthContext';
 
 function Verify() {
+  const { login } = useContext(AuthContext);
   const [code, setCode] = useState('');
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -36,8 +38,12 @@ function Verify() {
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Verification failed');
 
+      if (data.token && data.user) {
+        login(data.token, data.user);
+      }
+      
       setSuccess(true);
-      setTimeout(() => navigate('/login'), 2000);
+      setTimeout(() => navigate('/'), 2000);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -65,7 +71,7 @@ function Verify() {
             fontSize: '14px',
             lineHeight: '1.65'
           }}>
-            Your account is confirmed. Redirecting you to login…
+            Your account is confirmed. Redirecting you to home…
           </p>
         </div>
       </div>

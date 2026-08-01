@@ -13,6 +13,14 @@ const productSchema = new mongoose.Schema({
   delivery: String,
   features: [String],
   sponsored: Boolean,
+  normalizedName: { type: String, index: true },
+  matchedProducts: [{
+    site: String,
+    name: String,
+    price: String,
+    rating: String,
+    url: String
+  }]
 });
 
 const cacheSchema = new mongoose.Schema({

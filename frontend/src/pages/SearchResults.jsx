@@ -14,10 +14,10 @@ function SearchResults() {
   const [results, setResults] = useState(null);
   const [error, setError] = useState(null);
   const [newQuery, setNewQuery] = useState(query);
-  
+
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
-  const ITEMS_PER_PAGE = 24; 
+  const ITEMS_PER_PAGE = 24;
 
   // Filters State
   const [selectedPlatforms, setSelectedPlatforms] = useState({ amazon: true, flipkart: true });
@@ -47,7 +47,7 @@ function SearchResults() {
       const headers = {};
       if (token) headers['Authorization'] = `Bearer ${token}`;
       const response = await fetch(
-        `http://localhost:3000/api/product-details?product=${encodeURIComponent(searchQuery)}&noStore=true`,
+        `http://localhost:3000/api/product-details?product=${encodeURIComponent(searchQuery)}`,
         { headers }
       );
       const data = await response.json();
@@ -74,14 +74,20 @@ function SearchResults() {
   };
 
   // Process and Filter Data
-  const { filteredProducts, uniqueBrands, totalFilteredCount, totalFetched } = useMemo(() => {
+  const { filteredProducts, uniqueBrands, totalFilteredCount, totalFetched, similarPricePairs } = useMemo(() => {
     let all = [];
     if (results) {
       const amazon = (results?.amazon?.products || []).map(p => ({ ...p, _platform: 'amazon' }));
       const flipkart = (results?.flipkart?.products || []).map(p => ({ ...p, _platform: 'flipkart' }));
-      all = [...amazon, ...flipkart];
+      
+      // Interleave to mix platforms while keeping the best relevant matches at the top
+      const maxLength = Math.max(amazon.length, flipkart.length);
+      for (let i = 0; i < maxLength; i++) {
+        if (i < amazon.length) all.push(amazon[i]);
+        if (i < flipkart.length) all.push(flipkart[i]);
+      }
     }
-    
+
     const totalFetched = all.length;
 
     // Extract brands
@@ -123,10 +129,51 @@ function SearchResults() {
       return true;
     });
 
-    // Sort low to high
-    filtered.sort((a, b) => parsePrice(a.currentPrice) - parsePrice(b.currentPrice));
+    // Find Similar Price Pairs
+    const similarPricePairs = [];
+    const amazonProds = filtered.filter(p => p._platform === 'amazon');
+    const flipkartProds = filtered.filter(p => p._platform === 'flipkart');
 
-    return { filteredProducts: filtered, uniqueBrands, totalFilteredCount: filtered.length, totalFetched };
+    const usedFlipkart = new Set();
+    amazonProds.forEach(amz => {
+      const p1 = parsePrice(amz.currentPrice);
+      if (p1 === Infinity) return;
+
+      let bestMatch = null;
+      let minDiff = Infinity;
+
+      flipkartProds.forEach(flp => {
+        if (usedFlipkart.has(flp.productLink)) return;
+        const p2 = parsePrice(flp.currentPrice);
+        if (p2 === Infinity) return;
+
+        const diff = Math.abs(p1 - p2);
+        const percentDiff = diff / Math.max(p1, p2);
+
+        // Within 15% price difference
+        if (percentDiff <= 0.15 && diff < minDiff) {
+          minDiff = diff;
+          bestMatch = flp;
+        }
+      });
+
+      if (bestMatch) {
+        const amzIndex = amazonProds.indexOf(amz);
+        const flpIndex = flipkartProds.indexOf(bestMatch);
+        similarPricePairs.push({ 
+          amazon: amz, 
+          flipkart: bestMatch, 
+          priceDiff: minDiff,
+          relevanceScore: amzIndex + flpIndex 
+        });
+        usedFlipkart.add(bestMatch.productLink);
+      }
+    });
+
+    // Sort by relevance (lowest combined index first) so the best matches are always shown at the top
+    similarPricePairs.sort((a, b) => a.relevanceScore - b.relevanceScore);
+
+    return { filteredProducts: filtered, uniqueBrands, totalFilteredCount: filtered.length, totalFetched, similarPricePairs };
   }, [results, selectedPlatforms, selectedBrands, priceRange, minRating]);
 
   // Pagination
@@ -142,7 +189,7 @@ function SearchResults() {
     setCurrentPage(1);
   };
   const handleBrandChange = (brand) => {
-    setSelectedBrands(prev => 
+    setSelectedBrands(prev =>
       prev.includes(brand) ? prev.filter(b => b !== brand) : [...prev, brand]
     );
     setCurrentPage(1);
@@ -161,36 +208,6 @@ function SearchResults() {
             </a>
           </div>
 
-          <form onSubmit={handleSearch} style={{
-            display: 'flex', flex: 1, maxWidth: '460px',
-            background: 'rgba(244,241,234,0.05)',
-            border: '2px solid var(--bone-20)',
-            borderRadius: '999px',
-            padding: '5px 5px 5px 18px', gap: '8px', margin: '0 24px',
-          }}
-            onFocus={e => e.currentTarget.style.borderColor = 'var(--acid)'}
-            onBlur={e => e.currentTarget.style.borderColor = 'var(--bone-20)'}
-          >
-            <span style={{ opacity: 0.4, display: 'flex', alignItems: 'center' }}>🔍</span>
-            <input
-              type="text"
-              value={newQuery}
-              onChange={e => setNewQuery(e.target.value)}
-              placeholder="Search products…"
-              style={{
-                flex: 1, background: 'none', border: 'none', outline: 'none',
-                color: 'var(--bone)', fontFamily: "'Space Grotesk', sans-serif", fontSize: '14px',
-              }}
-            />
-            <button type="submit" style={{
-              padding: '8px 18px', borderRadius: '999px', border: 'none',
-              background: 'var(--acid)', color: 'var(--ink)',
-              fontFamily: "'Archivo', sans-serif", fontSize: '12px', fontWeight: '800',
-              cursor: 'pointer', flexShrink: 0, transition: 'background 0.2s',
-            }}>
-              Go →
-            </button>
-          </form>
 
           <div className="nav-right">
             {user ? (
@@ -207,18 +224,48 @@ function SearchResults() {
       </header>
 
       {/* ── PAGE HEADER ── */}
-      <div style={{ maxWidth: '1240px', margin: '0 auto', padding: '48px 20px 24px' }}>
+      <div style={{ maxWidth: '1240px', margin: '0 auto', padding: '48px 20px 24px', display: 'flex', justifyContent: 'center', flexDirection: 'column' }}>
         <a href="/" style={{
-            display: 'inline-flex', alignItems: 'center', gap: '6px',
-            fontFamily: "'Archivo', sans-serif", fontSize: '12px', fontWeight: '700',
-            color: 'var(--bone-55)', textDecoration: 'none', letterSpacing: '0.08em', textTransform: 'uppercase',
-            marginBottom: '20px', transition: 'color 0.2s',
-          }}
+          display: 'inline-flex', alignItems: 'center', gap: '6px',
+          fontFamily: "'Archivo', sans-serif", fontSize: '12px', fontWeight: '700',
+          color: 'var(--bone-55)', textDecoration: 'none', letterSpacing: '0.08em', textTransform: 'uppercase',
+          marginBottom: '20px', transition: 'color 0.2s',
+        }}
           onMouseOver={e => e.currentTarget.style.color = 'var(--acid)'}
           onMouseOut={e => e.currentTarget.style.color = 'var(--bone-55)'}
         >
           ← Back to Home
         </a>
+        <form onSubmit={handleSearch} style={{
+          display: 'flex', flex: 1, maxWidth: '1060px',
+          background: 'rgba(244,241,234,0.05)',
+          border: '2px solid var(--bone-20)',
+          borderRadius: '999px',
+          padding: '5px 5px 5px 18px', gap: '8px', margin: '20px 24px',
+        }}
+          onFocus={e => e.currentTarget.style.borderColor = 'var(--acid)'}
+          onBlur={e => e.currentTarget.style.borderColor = 'var(--bone-20)'}
+        >
+          <span style={{ opacity: 0.4, display: 'flex', alignItems: 'center' }}>🔍</span>
+          <input
+            type="text"
+            value={newQuery}
+            onChange={e => setNewQuery(e.target.value)}
+            placeholder="Search products…"
+            style={{
+              flex: 1, background: 'none', border: 'none', outline: 'none',
+              color: 'var(--bone)', fontFamily: "'Space Grotesk', sans-serif", fontSize: '14px',
+            }}
+          />
+          <button type="submit" style={{
+            padding: '8px 18px', borderRadius: '999px', border: 'none',
+            background: 'var(--acid)', color: 'var(--ink)',
+            fontFamily: "'Archivo', sans-serif", fontSize: '12px', fontWeight: '800',
+            cursor: 'pointer', flexShrink: 0, transition: 'background 0.2s',
+          }}>
+            Go →
+          </button>
+        </form>
 
         {query && !loading && (
           <div style={{ marginBottom: '8px' }}>
@@ -263,7 +310,7 @@ function SearchResults() {
       {/* ── RESULTS LAYOUT (Sidebar + Grid) ── */}
       {results && !loading && (
         <div style={{ maxWidth: '1240px', margin: '0 auto', padding: '0 20px 80px' }}>
-          
+
           <div className="summary-bar" style={{ marginBottom: '32px' }}>
             <div className="summary-query">
               Found <strong>{totalFetched} total products</strong> across platforms. Showing <strong>{totalFilteredCount}</strong> matching filters.
@@ -271,7 +318,7 @@ function SearchResults() {
           </div>
 
           <div className="results-layout">
-            
+
             {/* ── SIDEBAR FILTERS ── */}
             <aside className="sidebar">
               <div style={{ fontFamily: "'Archivo Black', sans-serif", fontSize: '20px', color: 'var(--bone)', marginBottom: '24px' }}>
@@ -282,14 +329,14 @@ function SearchResults() {
               <div className="filter-section">
                 <div className="filter-title">Platform</div>
                 <label className="filter-label">
-                  <input type="checkbox" className="filter-checkbox" 
-                    checked={selectedPlatforms.amazon} onChange={() => handlePlatformChange('amazon')} 
+                  <input type="checkbox" className="filter-checkbox"
+                    checked={selectedPlatforms.amazon} onChange={() => handlePlatformChange('amazon')}
                   />
                   Amazon
                 </label>
                 <label className="filter-label">
-                  <input type="checkbox" className="filter-checkbox" 
-                    checked={selectedPlatforms.flipkart} onChange={() => handlePlatformChange('flipkart')} 
+                  <input type="checkbox" className="filter-checkbox"
+                    checked={selectedPlatforms.flipkart} onChange={() => handlePlatformChange('flipkart')}
                   />
                   Flipkart
                 </label>
@@ -299,25 +346,25 @@ function SearchResults() {
               <div className="filter-section">
                 <div className="filter-title">Price Range</div>
                 <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                  <input 
-                    type="number" 
-                    placeholder="Min ₹" 
+                  <input
+                    type="number"
+                    placeholder="Min ₹"
                     value={priceRange.min}
-                    onChange={e => { setPriceRange(prev => ({...prev, min: e.target.value})); setCurrentPage(1); }}
-                    style={{ 
-                      width: '80px', padding: '6px', background: 'transparent', 
+                    onChange={e => { setPriceRange(prev => ({ ...prev, min: e.target.value })); setCurrentPage(1); }}
+                    style={{
+                      width: '80px', padding: '6px', background: 'transparent',
                       border: '1px solid var(--bone-20)', color: 'var(--bone)', borderRadius: '4px',
                       fontFamily: "'Space Grotesk', sans-serif", fontSize: '13px'
                     }}
                   />
                   <span style={{ color: 'var(--bone-55)' }}>to</span>
-                  <input 
-                    type="number" 
-                    placeholder="Max ₹" 
+                  <input
+                    type="number"
+                    placeholder="Max ₹"
                     value={priceRange.max}
-                    onChange={e => { setPriceRange(prev => ({...prev, max: e.target.value})); setCurrentPage(1); }}
-                    style={{ 
-                      width: '80px', padding: '6px', background: 'transparent', 
+                    onChange={e => { setPriceRange(prev => ({ ...prev, max: e.target.value })); setCurrentPage(1); }}
+                    style={{
+                      width: '80px', padding: '6px', background: 'transparent',
                       border: '1px solid var(--bone-20)', color: 'var(--bone)', borderRadius: '4px',
                       fontFamily: "'Space Grotesk', sans-serif", fontSize: '13px'
                     }}
@@ -330,9 +377,9 @@ function SearchResults() {
                 <div className="filter-title">Customer Rating</div>
                 {[4, 3, 2, 1].map(stars => (
                   <label key={stars} className="filter-label">
-                    <input 
-                      type="radio" 
-                      name="rating" 
+                    <input
+                      type="radio"
+                      name="rating"
                       className="filter-checkbox"
                       checked={minRating === stars}
                       onChange={() => { setMinRating(stars); setCurrentPage(1); }}
@@ -341,9 +388,9 @@ function SearchResults() {
                   </label>
                 ))}
                 <label className="filter-label">
-                  <input 
-                    type="radio" 
-                    name="rating" 
+                  <input
+                    type="radio"
+                    name="rating"
                     className="filter-checkbox"
                     checked={minRating === 0}
                     onChange={() => { setMinRating(0); setCurrentPage(1); }}
@@ -358,8 +405,8 @@ function SearchResults() {
                   <div className="filter-title">Top Brands</div>
                   {uniqueBrands.map(brand => (
                     <label key={brand} className="filter-label">
-                      <input 
-                        type="checkbox" 
+                      <input
+                        type="checkbox"
                         className="filter-checkbox"
                         checked={selectedBrands.includes(brand)}
                         onChange={() => handleBrandChange(brand)}
@@ -373,12 +420,34 @@ function SearchResults() {
 
             {/* ── MAIN CONTENT (Results Grid) ── */}
             <main className="main-content">
+              {similarPricePairs && similarPricePairs.length > 0 && (
+                <div style={{ marginBottom: '48px' }}>
+                  <div className="section-heading" style={{ color: 'var(--bone)', fontSize: '20px', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    ✨ Similar Priced Products
+                    <span style={{ fontSize: '14px', color: 'var(--bone-55)', fontWeight: 'normal' }}>(Across both sites)</span>
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                    {similarPricePairs.slice(0, 3).map((pair, idx) => (
+                      <div key={idx} style={{
+                        display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px',
+                        background: 'rgba(255,255,255,0.03)', border: '1px solid var(--bone-20)',
+                        borderRadius: '12px', padding: '16px'
+                      }}>
+                        <ProductCard product={pair.amazon} platform="amazon" initialCompact={true} />
+                        <ProductCard product={pair.flipkart} platform="flipkart" initialCompact={true} />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '20px' }}>
-                <div className="section-heading" style={{ color: 'var(--bone)', fontSize: '20px' }}>
-                  Products <span style={{ color: 'var(--bone-40)', fontSize: '14px', fontWeight: '400' }}>(Low to High)</span>
+                <div className="section-heading" style={{ color: 'var(--bone)', fontSize: '20px', display: 'flex', alignItems: 'center', gap: '16px' }}>
+                  <span>Products</span>
+
                 </div>
                 <div style={{ fontFamily: "'Space Grotesk', sans-serif", color: 'var(--bone-55)', fontSize: '14px' }}>
-                  {totalFilteredCount > 0 
+                  {totalFilteredCount > 0
                     ? `Showing ${Math.min((currentPage - 1) * ITEMS_PER_PAGE + 1, totalFilteredCount)} – ${Math.min(currentPage * ITEMS_PER_PAGE, totalFilteredCount)} of ${totalFilteredCount}`
                     : '0 results'
                   }
@@ -419,7 +488,7 @@ function SearchResults() {
                   >
                     ← Prev
                   </button>
-                  
+
                   <div style={{
                     display: 'flex', alignItems: 'center', padding: '0 10px',
                     fontFamily: "'Space Grotesk', sans-serif", color: 'var(--bone-70)', fontSize: '14px'

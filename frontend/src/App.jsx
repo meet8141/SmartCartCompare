@@ -12,6 +12,7 @@ import SearchResults from './pages/SearchResults';
 import AdminDashboard from './pages/AdminDashboard';
 import AdminUsers from './pages/AdminUsers';
 import AdminRoute from './components/AdminRoute';
+import Compare from './pages/Compare';
 
 function App() {
   return (
@@ -42,6 +43,14 @@ function App() {
             element={
               <ProtectedRoute>
                 <History />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/compare" 
+            element={
+              <ProtectedRoute>
+                <Compare />
               </ProtectedRoute>
             } 
           />

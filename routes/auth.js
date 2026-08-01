@@ -158,7 +158,36 @@ router.post('/verify', async (req, res) => {
     user.verificationCodeExpires = undefined;
     await user.save();
 
-    res.status(200).json({ message: 'Account verified successfully. You can now log in.' });
+    const payload = {
+      user: {
+        id: user.id,
+        username: user.username,
+        email: user.email,
+        isAdmin: user.isAdmin
+      }
+    };
+
+    jwt.sign(
+      payload,
+      process.env.JWT_SECRET || 'fallback_secret',
+      { expiresIn: '1h' },
+      async (err, token) => {
+        if (err) throw err;
+        
+        // Log the login event
+        await UserLog.create({
+          user: user._id,
+          action: 'LOGIN',
+          details: 'Automatic login after verification'
+        });
+
+        res.status(200).json({ 
+          message: 'Account verified successfully.',
+          token, 
+          user: payload.user 
+        });
+      }
+    );
 
   } catch (err) {
     console.error('Verify error:', err);
