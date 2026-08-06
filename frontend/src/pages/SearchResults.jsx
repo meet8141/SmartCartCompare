@@ -79,7 +79,7 @@ function SearchResults() {
     if (results) {
       const amazon = (results?.amazon?.products || []).map(p => ({ ...p, _platform: 'amazon' }));
       const flipkart = (results?.flipkart?.products || []).map(p => ({ ...p, _platform: 'flipkart' }));
-      
+
       // Interleave to mix platforms while keeping the best relevant matches at the top
       const maxLength = Math.max(amazon.length, flipkart.length);
       for (let i = 0; i < maxLength; i++) {
@@ -160,11 +160,11 @@ function SearchResults() {
       if (bestMatch) {
         const amzIndex = amazonProds.indexOf(amz);
         const flpIndex = flipkartProds.indexOf(bestMatch);
-        similarPricePairs.push({ 
-          amazon: amz, 
-          flipkart: bestMatch, 
+        similarPricePairs.push({
+          amazon: amz,
+          flipkart: bestMatch,
           priceDiff: minDiff,
-          relevanceScore: amzIndex + flpIndex 
+          relevanceScore: amzIndex + flpIndex
         });
         usedFlipkart.add(bestMatch.productLink);
       }
@@ -266,6 +266,34 @@ function SearchResults() {
             Go →
           </button>
         </form>
+
+        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', justifyContent: 'center', marginBottom: '30px' }}>
+          {['Under 99 (Electronics)', 'Under 99 (Grocery)', 'Under 99 (Clothes)'].map(s => (
+            <span 
+              key={s} 
+              onClick={() => {
+                const searchQ = s.replace(/[()]/g, '');
+                setNewQuery(searchQ);
+                navigate(`/results?q=${encodeURIComponent(searchQ)}`);
+              }}
+              style={{
+                padding: '6px 16px',
+                borderRadius: '999px',
+                background: 'rgba(244,241,234,0.05)',
+                border: '1px solid var(--bone-20)',
+                color: 'var(--bone-70)',
+                fontSize: '13px',
+                fontFamily: "'Space Grotesk', sans-serif",
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+              }}
+              onMouseOver={e => { e.currentTarget.style.borderColor = 'var(--acid)'; e.currentTarget.style.color = 'var(--acid)'; }}
+              onMouseOut={e => { e.currentTarget.style.borderColor = 'var(--bone-20)'; e.currentTarget.style.color = 'var(--bone-70)'; }}
+            >
+              {s}
+            </span>
+          ))}
+        </div>
 
         {query && !loading && (
           <div style={{ marginBottom: '8px' }}>
@@ -420,27 +448,6 @@ function SearchResults() {
 
             {/* ── MAIN CONTENT (Results Grid) ── */}
             <main className="main-content">
-              {similarPricePairs && similarPricePairs.length > 0 && (
-                <div style={{ marginBottom: '48px' }}>
-                  <div className="section-heading" style={{ color: 'var(--bone)', fontSize: '20px', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    ✨ Similar Priced Products
-                    <span style={{ fontSize: '14px', color: 'var(--bone-55)', fontWeight: 'normal' }}>(Across both sites)</span>
-                  </div>
-
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                    {similarPricePairs.slice(0, 3).map((pair, idx) => (
-                      <div key={idx} style={{
-                        display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px',
-                        background: 'rgba(255,255,255,0.03)', border: '1px solid var(--bone-20)',
-                        borderRadius: '12px', padding: '16px'
-                      }}>
-                        <ProductCard product={pair.amazon} platform="amazon" initialCompact={true} />
-                        <ProductCard product={pair.flipkart} platform="flipkart" initialCompact={true} />
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '20px' }}>
                 <div className="section-heading" style={{ color: 'var(--bone)', fontSize: '20px', display: 'flex', alignItems: 'center', gap: '16px' }}>
                   <span>Products</span>

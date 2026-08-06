@@ -32,7 +32,9 @@ function History() {
         <div className="nav-inner">
           <a className="nav-brand" href="/">
             <span className="brand-main">SMART</span>
+
             <span className="brand-accent">CART</span>
+            <span className="brand-main">COMPARE</span>
           </a>
           <div className="nav-right">
             <a href="/" className="nav-login">← Back to Compare</a>

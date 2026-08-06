@@ -1,5 +1,5 @@
-import React, { useState, useContext } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import React, { useState, useEffect, useContext } from 'react';
+import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { AuthContext } from '../contexts/AuthContext';
 
 function Login() {
@@ -8,7 +8,16 @@ function Login() {
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { login } = useContext(AuthContext);
+  const isAdminLogin = searchParams.get('role') === 'admin';
+
+  useEffect(() => {
+    if (isAdminLogin) {
+      setEmail('admin');
+      setPassword('Admin@123');
+    }
+  }, [isAdminLogin]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -19,7 +28,7 @@ function Login() {
       const response = await fetch('http://localhost:3000/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password })
+        body: JSON.stringify(isAdminLogin ? { username: email, password } : { email, password })
       });
 
       const data = await response.json();
@@ -33,7 +42,7 @@ function Login() {
       }
 
       login(data.token, data.user);
-      navigate('/');
+      navigate(data.user?.isAdmin ? '/admin' : '/');
     } catch (err) {
       setError(err.message);
     } finally {
@@ -68,22 +77,22 @@ function Login() {
           </a>
         </div>
 
-        <h1 className="auth-title">Welcome<br />Back.</h1>
-        <p className="auth-sub">Sign in to compare prices and track your searches.</p>
+        <h1 className="auth-title">{isAdminLogin ? <>Admin<br />Login.</> : <>Welcome<br />Back.</>}</h1>
+        <p className="auth-sub">{isAdminLogin ? 'Use admin / Admin@123 to open the admin panel.' : 'Sign in to compare prices and track your searches.'}</p>
 
         {error && <div className="auth-error">{error}</div>}
 
         <form onSubmit={handleSubmit} className="auth-form" id="login-form">
           <div>
-            <label className="auth-label" htmlFor="login-email">Email</label>
+            <label className="auth-label" htmlFor="login-email">{isAdminLogin ? 'Username' : 'Email'}</label>
             <input
               id="login-email"
-              type="email"
+              type={isAdminLogin ? 'text' : 'email'}
               className="auth-input"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
-              placeholder="you@example.com"
+              placeholder={isAdminLogin ? 'admin' : 'you@example.com'}
             />
           </div>
           <div>
@@ -111,6 +120,11 @@ function Login() {
         <p className="auth-footer-text">
           Don't have an account? <Link to="/signup">Sign up</Link>
         </p>
+        {!isAdminLogin && (
+          <p className="auth-footer-text" style={{ marginTop: '8px' }}>
+            Admin access? <Link to="/login?role=admin">Admin Login</Link>
+          </p>
+        )}
       </div>
     </div>
   );

@@ -85,6 +85,7 @@ function AdminDashboard() {
             <span className="brand-accent">CART</span>
           </a>
           <div className="nav-right">
+            <Link to="/admin/add-product" className="nav-login">Add Product</Link>
             <Link to="/admin/users" className="nav-login">User Management</Link>
             <a href="/" className="nav-logout" style={{ textDecoration: 'none', padding: '7px 16px', borderRadius: '999px', border: '2px solid var(--bone-30)', color: 'var(--bone-75)', fontSize: '13px', fontWeight: '700', fontFamily: "'Archivo', sans-serif", transition: 'border-color 0.2s, color 0.2s' }}
               onMouseOver={e => { e.currentTarget.style.borderColor = 'var(--hot)'; e.currentTarget.style.color = 'var(--hot)'; }}

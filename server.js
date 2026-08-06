@@ -16,6 +16,7 @@ const PORT = process.env.PORT || 3000;
 // Middleware
 app.use(cors());
 app.use(express.json());
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // MongoDB Connection
 mongoose.connect(process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/smartcartcompare')
@@ -30,30 +31,40 @@ app.use('/api/admin', require('./routes/admin'));
 const { optionalAuth } = require('./middleware/auth');
 app.use('/api/history/view', optionalAuth, require('./routes/view'));
 app.use('/api/products/compare', require('./routes/compare'));
+app.use('/api/store', require('./routes/store')); // Mock E-Commerce Routes
 
 // ── Browser-realistic user-agents ────────────────────────────────────────────
 const USER_AGENTS = [
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
-  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15',
-  'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.3 Safari/605.1.15',
+  'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:138.0) Gecko/20100101 Firefox/138.0',
 ];
 const randomUA = () => USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
 
+/** Small delay helper */
+function delay(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 /**
- * fetchHtml(url)
+ * fetchHtml(url, site)
  * Fetches raw HTML using realistic browser headers to reduce bot detection.
+ * Includes site-specific headers and retry logic.
  */
-async function fetchHtml(url) {
-  try {
-    const ua = randomUA();
-    const { data, status } = await axios.get(url, {
-      headers: {
+async function fetchHtml(url, site = 'amazon', retries = 3) {
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      const ua = randomUA();
+
+      // Build site-specific headers
+      const headers = {
         'User-Agent':              ua,
-        'Accept':                  'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-        'Accept-Language':         'en-IN,en-GB;q=0.9,en-US;q=0.8,en;q=0.7',
+        'Accept':                  'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+        'Accept-Language':         'en-IN,en-GB;q=0.9,en-US;q=0.8,en;q=0.7,hi;q=0.6',
         'Accept-Encoding':         'gzip, deflate, br',
-        'sec-ch-ua':               '"Google Chrome";v="124", "Not;A=Brand";v="8", "Chromium";v="124"',
+        'sec-ch-ua':               `"Chromium";v="137", "Not/A)Brand";v="24", "Google Chrome";v="137"`,
         'sec-ch-ua-mobile':        '?0',
         'sec-ch-ua-platform':      '"Windows"',
         'Sec-Fetch-Dest':          'document',
@@ -63,16 +74,143 @@ async function fetchHtml(url) {
         'Upgrade-Insecure-Requests': '1',
         'Cache-Control':           'max-age=0',
         'DNT':                     '1',
-      },
-      timeout:      20000,
+        'Connection':              'keep-alive',
+        'Priority':                'u=0, i',
+      };
+
+      // Flipkart needs a Referer and specific cookie handling
+      if (site === 'flipkart') {
+        headers['Referer'] = 'https://www.flipkart.com/';
+        headers['Origin'] = 'https://www.flipkart.com';
+        headers['Sec-Fetch-Site'] = 'same-origin';
+      }
+
+      const { data, status, headers: respHeaders } = await axios.get(url, {
+        headers,
+        timeout:      25000,
+        maxRedirects: 5,
+        // Don't throw on non-2xx so we can handle 403 gracefully
+        validateStatus: (status) => status < 500,
+      });
+
+      if (status === 403) {
+        console.warn(`⚠ ${site} returned 403 (attempt ${attempt}/${retries})`);
+        if (attempt < retries) {
+          await delay(2000 * attempt); // Exponential backoff
+          continue;
+        }
+        return {
+          ok: false,
+          status: 403,
+          error: `${site} blocked this request (403 Forbidden). The site may be detecting automated requests.`,
+        };
+      }
+
+      if (status === 503) {
+        console.warn(`⚠ ${site} returned 503 (attempt ${attempt}/${retries})`);
+        if (attempt < retries) {
+          await delay(3000 * attempt);
+          continue;
+        }
+        return { ok: false, status: 503, error: `${site} returned 503 Service Unavailable.` };
+      }
+
+      if (status >= 400) {
+        return { ok: false, status, error: `${site} returned HTTP ${status}` };
+      }
+
+      return { ok: true, status, html: data };
+    } catch (err) {
+      console.warn(`⚠ ${site} fetch error (attempt ${attempt}/${retries}):`, err.message);
+      if (attempt < retries) {
+        await delay(2000 * attempt);
+        continue;
+      }
+      return {
+        ok:     false,
+        status: err.response ? err.response.status : null,
+        error:  err.message,
+      };
+    }
+  }
+}
+
+/**
+ * fetchFlipkartWithSession(url)
+ * Flipkart requires a valid session cookie. This function first visits
+ * the Flipkart homepage to establish a session, then fetches the search page.
+ */
+async function fetchFlipkartWithSession(searchUrl) {
+  try {
+    const ua = randomUA();
+    const baseHeaders = {
+      'User-Agent':              ua,
+      'Accept':                  'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+      'Accept-Language':         'en-IN,en-GB;q=0.9,en-US;q=0.8,en;q=0.7',
+      'Accept-Encoding':         'gzip, deflate, br',
+      'Sec-Fetch-Dest':          'document',
+      'Sec-Fetch-Mode':          'navigate',
+      'Sec-Fetch-Site':          'none',
+      'Sec-Fetch-User':          '?1',
+      'Upgrade-Insecure-Requests': '1',
+      'Connection':              'keep-alive',
+    };
+
+    // Step 1: Visit Flipkart homepage to get session cookies
+    console.log('  → Establishing Flipkart session...');
+    const homeResponse = await axios.get('https://www.flipkart.com/', {
+      headers: baseHeaders,
+      timeout: 15000,
       maxRedirects: 5,
+      validateStatus: () => true, // Accept any status
     });
-    return { ok: true, status, html: data };
-  } catch (err) {
+
+    // Extract Set-Cookie headers
+    const setCookieHeaders = homeResponse.headers['set-cookie'] || [];
+    const cookieString = setCookieHeaders
+      .map(c => c.split(';')[0])  // Take just the cookie name=value part
+      .join('; ');
+
+    if (!cookieString) {
+      console.warn('  ⚠ No cookies received from Flipkart homepage');
+    }
+
+    // Small delay to mimic human behavior
+    await delay(500 + Math.random() * 1000);
+
+    // Step 2: Fetch the search page with session cookies
+    const searchHeaders = {
+      ...baseHeaders,
+      'Referer':        'https://www.flipkart.com/',
+      'Sec-Fetch-Site': 'same-origin',
+    };
+    if (cookieString) {
+      searchHeaders['Cookie'] = cookieString;
+    }
+
+    const { data, status } = await axios.get(searchUrl, {
+      headers: searchHeaders,
+      timeout: 25000,
+      maxRedirects: 5,
+      validateStatus: () => true,
+    });
+
+    if (status === 200) {
+      return { ok: true, status, html: data };
+    }
+
+    console.warn(`  ⚠ Flipkart search returned status ${status}`);
     return {
-      ok:     false,
+      ok: false,
+      status,
+      error: `Flipkart returned HTTP ${status}`,
+    };
+  } catch (err) {
+    console.warn('  ⚠ Flipkart session fetch error:', err.message);
+    return {
+      ok: false,
       status: err.response ? err.response.status : null,
-      error:  err.message,
+      error: err.message,
     };
   }
 }
@@ -134,67 +272,89 @@ app.get('/api/product-details', rateLimiter, optionalAuth, async (req, res) => {
       }
     }
 
-    // 2. Check Cache
+    // 2. Check Cache — but ONLY return cached data if it has products
     if (!noStore) {
       const cachedData = await ProductCache.findOne({ query: cleanQuery });
       if (cachedData) {
-        return res.json({
-          query: cleanQuery,
-          amazon: cachedData.amazon,
-          flipkart: cachedData.flipkart,
-          cached: true,
-        });
+        const hasAmazonProducts = cachedData.amazon?.products?.length > 0;
+        const hasFlipkartProducts = cachedData.flipkart?.products?.length > 0;
+        
+        // Only use cache if at least one platform returned products
+        if (hasAmazonProducts || hasFlipkartProducts) {
+          console.log(`✓ Cache hit for "${cleanQuery}" (Amazon: ${cachedData.amazon?.products?.length || 0}, Flipkart: ${cachedData.flipkart?.products?.length || 0})`);
+          return res.json({
+            query: cleanQuery,
+            amazon: cachedData.amazon,
+            flipkart: cachedData.flipkart,
+            cached: true,
+          });
+        } else {
+          // Cache has failed/empty results — delete it so we re-scrape
+          console.log(`⚠ Cached data for "${cleanQuery}" has no products — deleting stale cache`);
+          await ProductCache.deleteOne({ query: cleanQuery });
+        }
       }
     }
 
     // 3. Scrape if not in cache
     const encoded = encodeURIComponent(query.trim());
     
-    // We want page 1 only to optimize response time
-    const pagesToFetch = [1];
-    const amazonUrls = pagesToFetch.map(p => `https://www.amazon.in/s?k=${encoded}&page=${p}`);
-    const flipkartUrls = pagesToFetch.map(p => `https://www.flipkart.com/search?q=${encoded}&page=${p}`);
+    const amazonUrl = `https://www.amazon.in/s?k=${encoded}&page=1`;
+    const flipkartUrl = `https://www.flipkart.com/search?q=${encoded}&page=1`;
 
-    // Fetch all concurrently
-    const allFetchPromises = [
-      ...amazonUrls.map(url => fetchHtml(url)),
-      ...flipkartUrls.map(url => fetchHtml(url))
-    ];
+    console.log(`🔍 Scraping Amazon and Flipkart for "${cleanQuery}"...`);
+
+    // Fetch Amazon and Flipkart with a small stagger to avoid looking like a bot
+    const amazonPromise = fetchHtml(amazonUrl, 'amazon', 3);
     
-    const fetchResults = await Promise.all(allFetchPromises);
+    // Small delay before Flipkart to stagger requests
+    await delay(300 + Math.random() * 500);
+    
+    // Try Flipkart with session-based approach first (handles 403)
+    const flipkartPromise = fetchFlipkartWithSession(flipkartUrl);
+
+    const [amazonResult, flipkartResult] = await Promise.all([amazonPromise, flipkartPromise]);
+
+    // If session approach failed for Flipkart, try direct fetch as fallback
+    let finalFlipkartResult = flipkartResult;
+    if (!flipkartResult.ok) {
+      console.log('  → Flipkart session approach failed, trying direct fetch...');
+      await delay(1000);
+      finalFlipkartResult = await fetchHtml(flipkartUrl, 'flipkart', 2);
+    }
     
     // Process Amazon
-    const amazonFetchResults = fetchResults.slice(0, pagesToFetch.length);
     let amazonProducts = [];
     let amazonError = null;
-    for (const res of amazonFetchResults) {
-      if (res.ok) {
-        const parsed = parseAmazon(res.html);
-        if (parsed.products && parsed.products.length > 0) {
-          amazonProducts = amazonProducts.concat(parsed.products);
-        } else if (parsed.error && !amazonError) {
-          amazonError = parsed.error;
-        }
-      } else if (!amazonError) {
-        amazonError = res.error || 'Fetch failed';
+    if (amazonResult.ok) {
+      const parsed = parseAmazon(amazonResult.html);
+      if (parsed.products && parsed.products.length > 0) {
+        amazonProducts = parsed.products;
+        console.log(`  ✓ Amazon: ${amazonProducts.length} products found`);
+      } else {
+        amazonError = parsed.error || 'No product cards found';
+        console.warn(`  ⚠ Amazon: ${amazonError}`);
       }
+    } else {
+      amazonError = amazonResult.error || 'Fetch failed';
+      console.warn(`  ⚠ Amazon fetch failed: ${amazonError}`);
     }
     
     // Process Flipkart
-    const flipkartFetchResults = fetchResults.slice(pagesToFetch.length, pagesToFetch.length * 2);
     let flipkartProducts = [];
     let flipkartError = null;
-    for (const res of flipkartFetchResults) {
-      if (res.ok) {
-        const parsed = parseFlipkart(res.html);
-        if (parsed.products && parsed.products.length > 0) {
-          flipkartProducts = flipkartProducts.concat(parsed.products);
-        } else if (parsed.error && !flipkartError) {
-          flipkartError = parsed.error;
-        }
-      } else if (!flipkartError) {
-        flipkartError = res.error || 'Fetch failed';
+    if (finalFlipkartResult.ok) {
+      const parsed = parseFlipkart(finalFlipkartResult.html);
+      if (parsed.products && parsed.products.length > 0) {
+        flipkartProducts = parsed.products;
+        console.log(`  ✓ Flipkart: ${flipkartProducts.length} products found`);
+      } else {
+        flipkartError = parsed.error || 'No product cards found';
+        console.warn(`  ⚠ Flipkart: ${flipkartError}`);
       }
+    } else {
+      flipkartError = finalFlipkartResult.error || 'Fetch failed';
+      console.warn(`  ⚠ Flipkart fetch failed: ${flipkartError}`);
     }
 
     // Deduplicate by URL to avoid overlapping pages
@@ -211,25 +371,32 @@ app.get('/api/product-details', rateLimiter, optionalAuth, async (req, res) => {
     const amazonData = {
       source: 'amazon',
       products: uniqueAmazon,
-      searchUrl: amazonUrls[0], // link to first page
+      searchUrl: amazonUrl,
       error: uniqueAmazon.length === 0 ? (amazonError || 'Fetch failed') : undefined
     };
 
     const flipkartData = {
       source: 'flipkart',
       products: uniqueFlipkart,
-      searchUrl: flipkartUrls[0],
+      searchUrl: flipkartUrl,
       error: uniqueFlipkart.length === 0 ? (flipkartError || 'Fetch failed') : undefined
     };
 
-    // 4. Save to Cache
-    if (!noStore) {
-      const newCache = new ProductCache({
-        query: cleanQuery,
-        amazon: amazonData,
-        flipkart: flipkartData,
-      });
-      await newCache.save();
+    // 4. Save to Cache — but ONLY if at least one platform returned products
+    if (!noStore && (uniqueAmazon.length > 0 || uniqueFlipkart.length > 0)) {
+      await ProductCache.findOneAndUpdate(
+        { query: cleanQuery },
+        {
+          query: cleanQuery,
+          amazon: amazonData,
+          flipkart: flipkartData,
+          updatedAt: new Date(),
+        },
+        { upsert: true, new: true }
+      );
+      console.log(`  ✓ Cached results for "${cleanQuery}"`);
+    } else {
+      console.log(`  ⚠ Skipping cache — no products from either platform`);
     }
 
     res.json({

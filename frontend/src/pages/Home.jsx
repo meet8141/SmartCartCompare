@@ -86,9 +86,11 @@ function Home() {
 
           {/* Center: Nav links */}
           <ul className="nav-links">
-            <li><a href="/">Compare</a></li>
-            <li><a href="/">Hot Deals</a></li>
-            <li><a href="/">Categories</a></li>
+            <li><a href="/#deals">Hot Deals</a></li>
+            <li><a href="/#categories">Categories</a></li>
+            {user && <li><a href="/store">Store</a></li>}
+            {user && <li><a href="/cart">Cart</a></li>}
+            {user && <li><a href="/wishlist">Wishlist</a></li>}
             {user && <li><a href="/history">History</a></li>}
           </ul>
 
@@ -168,10 +170,7 @@ function Home() {
             </div>
           </div>
 
-          <div style={{ marginTop: '28px', fontFamily: "'Space Grotesk', sans-serif", fontSize: '13px', color: 'var(--bone-55)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
-            <span>👥</span>
-            <span>Trusted by thousands of smart shoppers across India</span>
-          </div>
+
         </div>
       </section>
 
@@ -305,7 +304,7 @@ function Home() {
       )}
 
       {/* ── HOT DEALS ── */}
-      <div className="section">
+      <div className="section" id="deals" >
         <div className="section-head">
           <h2 className="section-title">
             HOT <span style={{ color: 'var(--hot)' }}>DEALS</span>
@@ -342,7 +341,7 @@ function Home() {
       </div>
 
       {/* ── CATEGORIES ── */}
-      <div className="section" style={{ paddingTop: 0 }}>
+      <div className="section" style={{ paddingTop: 0 }} id="categories">
         <div className="section-head">
           <h2 className="section-title">
             SHOP BY <span style={{ color: 'var(--hot)' }}>CATEGORY</span>

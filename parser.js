@@ -68,7 +68,7 @@ function parseAmazon(rawHtml) {
 
   // Detect CAPTCHA / bot-block page
   const title = $('title').text().toLowerCase();
-  const bodyText = $('body').text().toLowerCase();
+  const bodyText = $('body').text().substring(0, 5000).toLowerCase();
   if (
     title.includes('captcha') ||
     title.includes('robot check') ||
@@ -97,20 +97,40 @@ function parseAmazon(rawHtml) {
     const asin = card.attr('data-asin');
     if (!asin) return;
 
+    // Skip sponsored / ad cards
+    const classes = (card.attr('class') || '').toLowerCase();
     const isSponsored =
+      classes.includes('adholder') ||
       card.find('.puis-sponsored-label-text, [data-component-type="sp-sponsored-result"], .s-sponsored-label-info-icon').length > 0;
-    if (isSponsored) return; // skip sponsored / ad cards
+    if (isSponsored) return;
 
     // ── Name (multiple fallback selectors)
-    const name = firstText($, card, [
-      'h2 a span.a-size-medium',
-      'h2 a span.a-size-base-plus',
-      'h2 a span.a-size-mini',
-      'h2[aria-label]',
-      'h2 a span',
-      'h2 span',
-      '[data-cy="title-recipe"] span',
-    ]);
+    // First try the h2 with aria-label (Amazon's newer layout puts the title here)
+    let name = null;
+    
+    // Strategy 1: Get aria-label from h2 (most reliable on newer layouts)
+    const h2WithAriaLabel = card.find('h2[aria-label]');
+    if (h2WithAriaLabel.length) {
+      const ariaLabel = h2WithAriaLabel.first().attr('aria-label');
+      // Skip if it starts with "Sponsored Ad"
+      if (ariaLabel && !ariaLabel.startsWith('Sponsored Ad')) {
+        name = clean(ariaLabel);
+      }
+    }
+    
+    // Strategy 2: Try text-based selectors
+    if (!name) {
+      name = firstText($, card, [
+        'h2 a span.a-size-medium',
+        'h2 a span.a-size-base-plus',
+        'h2 a span.a-size-mini',
+        'h2 a span',
+        'h2 span',
+        '[data-cy="title-recipe"] h2 span',
+        '[data-cy="title-recipe"] a span',
+      ]);
+    }
+    
     if (!name) return; // skip cards with no name
 
     // ── Link
@@ -126,6 +146,9 @@ function parseAmazon(rawHtml) {
     let currentPrice = clean(
       card.find('.a-price[data-a-color="base"] .a-offscreen').first().text()
     );
+    if (!currentPrice) {
+      currentPrice = clean(card.find('.a-price:not([data-a-color="secondary"]) .a-offscreen').first().text());
+    }
     if (!currentPrice) {
       // Newer Amazon layout sometimes puts price directly in .a-price-whole
       const whole  = clean(card.find('.a-price-whole').first().text());
@@ -200,14 +223,19 @@ function parseAmazon(rawHtml) {
 /**
  * parseFlipkart(rawHtml)
  * Returns { source: 'flipkart', products: [...], error? }
+ * 
+ * Flipkart uses random/obfuscated class names that change frequently.
+ * This parser uses multiple strategies:
+ *   1. JSON-LD structured data (most reliable)
+ *   2. CSS selector matching with many fallbacks
+ *   3. Generic heuristic-based extraction
  */
 function parseFlipkart(rawHtml) {
   const $ = cheerio.load(rawHtml);
 
-  // ── JSON-LD: extract name + URL list (very reliable)
+  // ── Strategy 1: JSON-LD extraction (most reliable)
   const jsonLdItems = [];
   $('script[type="application/ld+json"]').each((i, el) => {
-    if (jsonLdItems.length) return false;
     try {
       const parsed = JSON.parse($(el).html());
       const list = Array.isArray(parsed)
@@ -216,14 +244,48 @@ function parseFlipkart(rawHtml) {
 
       if (list && list.itemListElement) {
         list.itemListElement.forEach(item => {
-          jsonLdItems.push({ name: clean(item.name), url: item.url || null });
+          jsonLdItems.push({
+            name: clean(item.name),
+            url: item.url || null,
+            image: item.image || null,
+          });
         });
       }
-    } catch (e) { /* skip */ }
+    } catch (e) { /* skip malformed JSON-LD */ }
   });
 
-  // ── CSS selector extraction from product cards
-  const cards = $('div.jIjQ8S, div.slAVV4, div.IIdQZO, div._4ddWXP, div.RGLWAk, div.nZIRY7, div.cPHDOP');
+  // ── Strategy 2: CSS selector extraction from product cards
+  // Include many known Flipkart card class names (they rotate these frequently)
+  const cardSelectors = [
+    'div.jIjQ8S', 'div.slAVV4', 'div.IIdQZO', 'div._4ddWXP',
+    'div.RGLWAk', 'div.nZIRY7', 'div.cPHDOP', 'div.tUxRFH',
+    'div._1AtVbE', 'div._2kHMtA', 'div._1xHGtK', 'div._13oc-S',
+  ];
+  
+  let cards = $(cardSelectors.join(', '));
+  
+  // Strategy 3: If no known class selectors work, try generic product card detection
+  if (!cards.length) {
+    // Look for product links with /p/ pattern and price elements
+    // Flipkart product pages always have /p/ in the URL
+    cards = $('div').filter(function() {
+      const el = $(this);
+      // Must have a product link and a price-like element
+      const hasProductLink = el.find('a[href*="/p/"]').length > 0;
+      const hasPriceLike = el.text().match(/₹[\d,]+/) !== null;
+      const depth = el.parents().length;
+      // Product cards are typically at a moderate DOM depth (not too shallow, not too deep)
+      return hasProductLink && hasPriceLike && depth >= 5 && depth <= 15;
+    });
+    
+    // Filter to keep only "leaf" product containers (not parents of other product containers)
+    if (cards.length > 50) {
+      // Too many matches — likely parent containers. Try to narrow down.
+      cards = cards.filter(function() {
+        return $(this).find('a[href*="/p/"]').length <= 2; // Leaf containers have few product links
+      });
+    }
+  }
 
   if (!cards.length && !jsonLdItems.length) {
     rawHtml = null;
@@ -236,13 +298,41 @@ function parseFlipkart(rawHtml) {
 
   const products = [];
 
+  // If we have JSON-LD items but no CSS cards, build products from JSON-LD alone
+  if (!cards.length && jsonLdItems.length) {
+    jsonLdItems.forEach(item => {
+      if (products.length >= MAX_RESULTS) return;
+      if (!item.name) return;
+      products.push({
+        source:        'flipkart',
+        sponsored:     false,
+        name:          item.name,
+        currentPrice:  'N/A',
+        originalPrice: null,
+        discount:      null,
+        rating:        null,
+        ratingsCount:  null,
+        reviews:       null,
+        imageUrl:      item.image || null,
+        productLink:   item.url || null,
+        delivery:      null,
+        features:      [],
+      });
+    });
+    rawHtml = null;
+    return { source: 'flipkart', products };
+  }
+
   cards.each((i, el) => {
     if (products.length >= MAX_RESULTS) return false;
 
     const root = $(el);
 
     // ── Name
-    const cssName = firstText($, root, ['div.RG5Slk', 'div.KzDlHZ', 'div._4rR01T', 'a.pIpigb', 'a.wjcEIp', 'a.s1Q9rs', 'a.WKTcLC'])
+    const cssName = firstText($, root, [
+      'div.RG5Slk', 'div.KzDlHZ', 'div._4rR01T', 'a.pIpigb',
+      'a.wjcEIp', 'a.s1Q9rs', 'a.WKTcLC', 'a.IRpwTa',
+    ])
                  || firstAttr($, root, ['a[title]'], 'title');
     const jsonLdRef = jsonLdItems[i] || null;
     const name      = cssName || (jsonLdRef && jsonLdRef.name) || null;
@@ -250,6 +340,7 @@ function parseFlipkart(rawHtml) {
 
     // ── Link
     let relHref = root.find('a.k7wcnx').first().attr('href')
+               || root.find('a.CGtC98').first().attr('href')
                || root.find('a[href*="/p/"]').first().attr('href');
     let productLink = resolveUrl(relHref, 'https://www.flipkart.com');
     if (!productLink && jsonLdRef) {
@@ -262,7 +353,8 @@ function parseFlipkart(rawHtml) {
 
     // ── Current price
     const currentPrice = firstText($, root, [
-      'div.hZ3P6w.DeU9vF', 'div.hZ3P6w', 'div.oFEPlD div.hZ3P6w', 'div.Nx9bqj', 'div._30jeq3',
+      'div.hZ3P6w.DeU9vF', 'div.hZ3P6w', 'div.oFEPlD div.hZ3P6w',
+      'div.Nx9bqj', 'div._30jeq3', 'div.hl05eU div.Nx9bqj',
     ]);
 
     // ── Original / MRP price
@@ -290,7 +382,7 @@ function parseFlipkart(rawHtml) {
 
     // ── Feature highlights
     const features = [];
-    root.find('ul.HwRTzP li.DTBslk').each((j, liEl) => {
+    root.find('ul.HwRTzP li.DTBslk, ul li.J+igdf').each((j, liEl) => {
       const t = clean($(liEl).text());
       if (t) features.push(t);
     });
