@@ -73,14 +73,19 @@ function Wishlist() {
         ) : (
           <div className="compare-grid" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))' }}>
             {wishlist.items.map(product => (
-              <div key={product._id} className="hot-deal-card" style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px', alignItems: 'center', textAlign: 'center' }}>
-                <img src={product.imageUrl} alt={product.name} style={{ width: '100%', height: '200px', objectFit: 'cover', borderRadius: '8px' }} />
-                <h3 style={{ fontSize: '18px', margin: 0, color: 'var(--bone)' }}>{product.name}</h3>
-                <div style={{ fontSize: '24px', fontWeight: 'bold', color: 'var(--acid)' }}>₹{product.price}</div>
-                
-                <div style={{ display: 'flex', gap: '8px', width: '100%', marginTop: 'auto' }}>
-                  <button className="pill-primary" style={{ flex: 1 }} onClick={() => moveToCart(product._id)}>🛒 Move to Cart</button>
-                  <button className="pill-secondary" onClick={() => removeFromWishlist(product._id)}>🗑️</button>
+              <div key={product._id} className="product-card visible">
+                <div className="card-img-area">
+                  <img src={product.imageUrl} alt={product.name} />
+                </div>
+                <div className="card-body">
+                  <h3 className="card-name" title={product.name}>{product.name}</h3>
+                  <div className="price-col">
+                    <span className="price-current">₹{product.price.toLocaleString('en-IN')}</span>
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px', width: '100%', marginTop: '12px' }}>
+                    <button className="pill-primary" style={{ flex: 1, padding: '8px', justifyContent: 'center' }} onClick={() => moveToCart(product._id)}>🛒 Move to Cart</button>
+                    <button className="pill-ghost" style={{ padding: '8px' }} onClick={() => removeFromWishlist(product._id)}>🗑️</button>
+                  </div>
                 </div>
               </div>
             ))}

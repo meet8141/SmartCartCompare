@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useContext } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import StoreNavbar from '../components/StoreNavbar';
 import { AuthContext } from '../contexts/AuthContext';
 
@@ -60,7 +62,7 @@ function PaymentPage() {
     setStep('details');
   };
 
-  const isExpiryBefore2027 = (expiry) => {
+  const isExpiryAfter2026 = (expiry) => {
     const match = expiry.match(/^(\d{2})\/(\d{2})$/);
     if (!match) return false;
 
@@ -68,7 +70,7 @@ function PaymentPage() {
     const year = Number(match[2]);
     if (month < 1 || month > 12) return false;
 
-    return year < 27;
+    return year > 26;
   };
 
   const validatePaymentDetails = () => {
@@ -97,8 +99,8 @@ function PaymentPage() {
         return false;
       }
 
-      if (!isExpiryBefore2027(expiry)) {
-        alert('Card expiry must be before 2027');
+      if (!isExpiryAfter2026(expiry)) {
+        alert('Card expiry must be after 2026');
         return false;
       }
     }
@@ -106,117 +108,102 @@ function PaymentPage() {
     return true;
   };
 
-  const escapePdfText = (text) => String(text)
-    .replace(/\\/g, '\\\\')
-    .replace(/\(/g, '\\(')
-    .replace(/\)/g, '\\)');
-
-  const buildReceiptLines = () => {
+  const downloadReceipt = () => {
     const orderId = orderData?._id || 'ORD-' + Date.now();
-    const lines = [];
-
-    lines.push('SMARTCART COMPARE');
-    lines.push('ORDER RECEIPT');
-    lines.push('');
-    lines.push(`Order ID       : ${orderId}`);
-    lines.push(`Date           : ${new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' })}`);
-    lines.push(`Time           : ${new Date().toLocaleTimeString('en-IN')}`);
-    lines.push(`Customer       : ${user?.username || 'Guest'}`);
-    lines.push(`Payment Method : ${paymentMethod === 'GPay' ? 'Google Pay (UPI)' : paymentMethod === 'NetBanking' ? 'Net Banking' : 'Debit Card'}`);
-
+    const doc = new jsPDF();
+    
+    // Header
+    doc.setFontSize(22);
+    doc.setTextColor(34, 211, 164);
+    doc.text("SMARTCART COMPARE", 14, 22);
+    
+    doc.setFontSize(14);
+    doc.setTextColor(50, 50, 50);
+    doc.text("ORDER RECEIPT", 14, 32);
+    
+    // Line separator
+    doc.setLineWidth(0.5);
+    doc.setDrawColor(200, 200, 200);
+    doc.line(14, 38, 196, 38);
+    
+    // Details
+    doc.setFontSize(10);
+    doc.setTextColor(80, 80, 80);
+    doc.text(`Order ID: ${orderId}`, 14, 48);
+    doc.text(`Date: ${new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}`, 14, 54);
+    doc.text(`Time: ${new Date().toLocaleTimeString('en-IN')}`, 14, 60);
+    doc.text(`Customer: ${user?.username || 'Guest'}`, 14, 66);
+    
+    // Payment Details
+    const paymentMethodText = paymentMethod === 'GPay' ? 'Google Pay (UPI)' : paymentMethod === 'NetBanking' ? 'Net Banking' : 'Debit Card';
+    doc.text(`Payment Method: ${paymentMethodText}`, 120, 48);
+    
+    let yPos = 54;
     if (paymentMethod === 'GPay' && paymentDetails.upiId) {
-      lines.push(`UPI ID         : ${paymentDetails.upiId}`);
+      doc.text(`UPI ID: ${paymentDetails.upiId}`, 120, yPos); yPos += 6;
     }
     if (paymentMethod === 'NetBanking' && paymentDetails.bank) {
-      lines.push(`Bank           : ${paymentDetails.bank}`);
+      doc.text(`Bank: ${paymentDetails.bank}`, 120, yPos); yPos += 6;
       if (paymentDetails.accountNumber) {
-        lines.push(`Account No.    : ${paymentDetails.accountNumber}`);
+        doc.text(`Account No: ${paymentDetails.accountNumber}`, 120, yPos); yPos += 6;
       }
     }
     if (paymentMethod === 'DebitCard' && paymentDetails.cardNumber) {
-      lines.push(`Card           : XXXX-XXXX-XXXX-${paymentDetails.cardNumber.slice(-4)}`);
-      lines.push(`Holder         : ${paymentDetails.holderName || 'N/A'}`);
+      doc.text(`Card: XXXX-XXXX-XXXX-${paymentDetails.cardNumber.slice(-4)}`, 120, yPos); yPos += 6;
+      doc.text(`Holder: ${paymentDetails.holderName || 'N/A'}`, 120, yPos); yPos += 6;
     }
-
-    lines.push('');
-    lines.push('ITEMS ORDERED');
-    lines.push('');
-
+    
+    // Table
+    const tableColumn = ["#", "Item", "Quantity", "Price (INR)", "Total (INR)"];
+    const tableRows = [];
+    
     if (product && !fromCart) {
-      lines.push(`1. ${product.name}`);
-      lines.push(`   Qty: 1 | Price: Rs. ${product.price.toLocaleString('en-IN')}`);
+      tableRows.push([
+        "1", 
+        product.name, 
+        "1", 
+        product.price.toLocaleString('en-IN'), 
+        product.price.toLocaleString('en-IN')
+      ]);
     } else {
       cartItems.forEach((item, index) => {
-        lines.push(`${index + 1}. ${item.product.name}`);
-        lines.push(`   Qty: ${item.quantity} | Price: Rs. ${(item.product.price * item.quantity).toLocaleString('en-IN')}`);
+        tableRows.push([
+          (index + 1).toString(),
+          item.product.name,
+          item.quantity.toString(),
+          item.product.price.toLocaleString('en-IN'),
+          (item.product.price * item.quantity).toLocaleString('en-IN')
+        ]);
       });
     }
-
-    lines.push('');
-    lines.push(`TOTAL AMOUNT : Rs. ${totalAmount.toLocaleString('en-IN')}`);
-    lines.push('STATUS       : PAYMENT SUCCESSFUL');
-    lines.push('');
-    lines.push('Thank you for your order booking!');
-    lines.push('We appreciate your trust in SmartCart Compare.');
-    lines.push('Your order will be delivered soon.');
-
-    return lines;
-  };
-
-  const buildReceiptPdf = (lines) => {
-    const pageWidth = 595.28;
-    const pageHeight = 841.89;
-    const leftMargin = 50;
-    const topPosition = 790;
-    const lineHeight = 16;
-
-    let content = 'BT\n/F1 12 Tf\n';
-    content += `${leftMargin} ${topPosition} Td\n`;
-    lines.forEach((line, index) => {
-      if (index > 0) {
-        content += `0 -${lineHeight} Td\n`;
-      }
-      content += `(${escapePdfText(line)}) Tj\n`;
+    
+    autoTable(doc, {
+      startY: 78,
+      head: [tableColumn],
+      body: tableRows,
+      theme: 'grid',
+      headStyles: { fillColor: [34, 211, 164], textColor: [255, 255, 255] },
+      styles: { fontSize: 10, cellPadding: 4 },
+      alternateRowStyles: { fillColor: [245, 245, 245] }
     });
-    content += 'ET';
-
-    const objects = [
-      '<< /Type /Catalog /Pages 2 0 R >>',
-      '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
-      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageWidth} ${pageHeight}] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>`,
-      '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
-      `<< /Length ${content.length} >>\nstream\n${content}\nendstream`,
-    ];
-
-    let pdf = '%PDF-1.4\n';
-    const offsets = ['0000000000 65535 f \n'];
-
-    objects.forEach((object, index) => {
-      offsets.push(String(pdf.length).padStart(10, '0') + ' 00000 n \n');
-      pdf += `${index + 1} 0 obj\n${object}\nendobj\n`;
-    });
-
-    const xrefPosition = pdf.length;
-    pdf += `xref\n0 ${objects.length + 1}\n`;
-    pdf += offsets.join('');
-    pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefPosition}\n%%EOF`;
-
-    return pdf;
-  };
-
-  const downloadReceipt = () => {
-    const orderId = orderData?._id || 'ORD-' + Date.now();
-    const receiptLines = buildReceiptLines();
-    const pdfContent = buildReceiptPdf(receiptLines);
-    const blob = new Blob([pdfContent], { type: 'application/pdf' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `SmartCart_Order_${orderId.slice(-8)}.pdf`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    
+    // Total Amount
+    const finalY = doc.lastAutoTable?.finalY || 100;
+    doc.setFontSize(12);
+    doc.setTextColor(30, 30, 30);
+    doc.text(`Total Amount: Rs. ${totalAmount.toLocaleString('en-IN')}`, 140, finalY + 15);
+    
+    // Status & Footer
+    doc.setFontSize(11);
+    doc.setTextColor(34, 211, 164);
+    doc.text("STATUS: PAYMENT SUCCESSFUL", 14, finalY + 15);
+    
+    doc.setFontSize(10);
+    doc.setTextColor(100, 100, 100);
+    doc.text("Thank you for your order!", 14, finalY + 35);
+    doc.text("Your order will be delivered soon.", 14, finalY + 41);
+    
+    doc.save(`SmartCart_Order_${orderId.slice(-8)}.pdf`);
   };
 
   const handlePay = async (e) => {
@@ -287,11 +274,11 @@ function PaymentPage() {
             </h2>
 
             {/* Order Summary */}
-            <div className="hot-deal-card" style={{ padding: '20px', marginBottom: '24px', cursor: 'default' }}>
+            <div className="chart-card" style={{ padding: '20px', marginBottom: '24px', cursor: 'default' }}>
               <h3 style={{ color: 'var(--bone-55)', fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '12px' }}>Order Summary</h3>
               {product && !fromCart && (
                 <div style={{ display: 'flex', gap: '14px', alignItems: 'center' }}>
-                  <img src={product.imageUrl} alt={product.name} style={{ width: '60px', height: '60px', objectFit: 'contain', borderRadius: '8px', background: '#fff' }} />
+                  <img src={product.imageUrl} alt={product.name} style={{ width: '60px', height: '60px', objectFit: 'contain', borderRadius: '8px', background: 'rgba(244,241,234,0.03)' }} />
                   <div style={{ flex: 1 }}>
                     <div style={{ color: 'var(--bone)', fontSize: '15px' }}>{product.name}</div>
                   </div>
@@ -300,7 +287,7 @@ function PaymentPage() {
               )}
               {fromCart && cartItems.map(item => (
                 <div key={item._id} style={{ display: 'flex', gap: '14px', alignItems: 'center', marginBottom: '10px' }}>
-                  <img src={item.product.imageUrl} alt={item.product.name} style={{ width: '50px', height: '50px', objectFit: 'contain', borderRadius: '6px', background: '#fff' }} />
+                  <img src={item.product.imageUrl} alt={item.product.name} style={{ width: '50px', height: '50px', objectFit: 'contain', borderRadius: '6px', background: 'rgba(244,241,234,0.03)' }} />
                   <div style={{ flex: 1, color: 'var(--bone)', fontSize: '14px' }}>{item.product.name} <span style={{ color: 'var(--bone-55)' }}>× {item.quantity}</span></div>
                   <div style={{ color: 'var(--acid)', fontWeight: 'bold' }}>₹{(item.product.price * item.quantity).toLocaleString('en-IN')}</div>
                 </div>
@@ -314,7 +301,7 @@ function PaymentPage() {
             {/* Payment Options */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
               {[
-                { key: 'GPay', icon: '📱', title: 'Google Pay (UPI)', desc: 'Pay using your UPI ID ending with @paytm', color: '#4285f4' },
+                { key: 'GPay', icon: '📱', title: 'Pay via UPI', desc: 'Pay using your UPI ID ending with @paytm', color: '#4285f4' },
                 { key: 'NetBanking', icon: '🏦', title: 'Net Banking', desc: 'Pay through your bank account directly', color: '#22d3a4' },
                 { key: 'DebitCard', icon: '💳', title: 'Debit Card', desc: 'Enter your 16-digit card number, CVV & expiry', color: '#ffbb40' },
               ].map(m => (
@@ -339,7 +326,7 @@ function PaymentPage() {
               ))}
             </div>
 
-            <button className="pill-secondary" style={{ marginTop: '24px' }} onClick={() => navigate(-1)}>← Go Back</button>
+            <button className="pill-ghost" style={{ marginTop: '24px' }} onClick={() => navigate(-1)}>← Go Back</button>
           </>
         )}
 
@@ -357,7 +344,7 @@ function PaymentPage() {
               {paymentMethod === 'DebitCard' && <><span style={{ color: '#ffbb40' }}>DEBIT CARD</span> DETAILS</>}
             </h2>
 
-            <form onSubmit={handlePay} className="hot-deal-card" style={{ padding: '24px', cursor: 'default', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <form onSubmit={handlePay} className="chart-card" style={{ padding: '24px', cursor: 'default', display: 'flex', flexDirection: 'column', gap: '16px' }}>
 
               {paymentMethod === 'GPay' && (
                 <>
@@ -365,7 +352,7 @@ function PaymentPage() {
                   <div>
                     <label style={{ color: 'var(--bone-55)', fontSize: '13px', marginBottom: '6px', display: 'block' }}>UPI ID (must end with @paytm)</label>
                     <input type="text" required pattern=".*@paytm$" title="UPI ID must end with @paytm"
-                      placeholder="yourname@paytm" className="productInput" style={{ width: '100%' }}
+                      placeholder="yourname@paytm" className="auth-input" style={{ width: '100%' }}
                       value={paymentDetails.upiId || ''}
                       onChange={e => setPaymentDetails({ upiId: e.target.value })}
                     />
@@ -378,7 +365,7 @@ function PaymentPage() {
                   <div style={{ textAlign: 'center', fontSize: '48px', margin: '8px 0' }}>🏦</div>
                   <div>
                     <label style={{ color: 'var(--bone-55)', fontSize: '13px', marginBottom: '6px', display: 'block' }}>Select Your Bank</label>
-                    <select required className="productInput" style={{ width: '100%', appearance: 'auto' }}
+                    <select required className="auth-input" style={{ width: '100%', appearance: 'auto' }}
                       value={paymentDetails.bank || ''}
                       onChange={e => setPaymentDetails({ bank: e.target.value })}
                     >
@@ -395,7 +382,7 @@ function PaymentPage() {
                   <div>
                     <label style={{ color: 'var(--bone-55)', fontSize: '13px', marginBottom: '6px', display: 'block' }}>Account Number</label>
                     <input type="text" required pattern="\d{8,18}" title="Enter 8 to 18 digit account number" maxLength={18}
-                      placeholder="123456789012" className="productInput" style={{ width: '100%' }}
+                      placeholder="123456789012" className="auth-input" style={{ width: '100%' }}
                       value={paymentDetails.accountNumber || ''}
                       onChange={e => setPaymentDetails(d => ({ ...d, accountNumber: e.target.value.replace(/\D/g, '') }))}
                     />
@@ -409,7 +396,7 @@ function PaymentPage() {
                   <div>
                     <label style={{ color: 'var(--bone-55)', fontSize: '13px', marginBottom: '4px', display: 'block' }}>Card Number (16 digits)</label>
                     <input type="text" required pattern="\d{16}" title="Enter 16 digit card number" maxLength={16}
-                      placeholder="1234567891011121" className="productInput" style={{ width: '100%', letterSpacing: '2px' }}
+                      placeholder="1234567891011121" className="auth-input" style={{ width: '100%', letterSpacing: '2px' }}
                       value={paymentDetails.cardNumber || ''}
                       onChange={e => setPaymentDetails(d => ({ ...d, cardNumber: e.target.value.replace(/\D/g, '') }))}
                     />
@@ -417,8 +404,8 @@ function PaymentPage() {
                   <div style={{ display: 'flex', gap: '12px' }}>
                     <div style={{ flex: 1 }}>
                       <label style={{ color: 'var(--bone-55)', fontSize: '13px', marginBottom: '4px', display: 'block' }}>Expiry (MM/YY)</label>
-                      <input type="text" required pattern="\d{2}/\d{2}" title="Use MM/YY and keep the year before 2027" placeholder="12/26" maxLength={5}
-                        className="productInput" style={{ width: '100%' }}
+                      <input type="text" required pattern="\d{2}/\d{2}" title="Use MM/YY and keep the year after 2026" placeholder="12/27" maxLength={5}
+                        className="auth-input" style={{ width: '100%' }}
                         value={paymentDetails.expiry || ''}
                         onChange={e => setPaymentDetails(d => ({ ...d, expiry: e.target.value }))}
                       />
@@ -426,7 +413,7 @@ function PaymentPage() {
                     <div style={{ flex: 1 }}>
                       <label style={{ color: 'var(--bone-55)', fontSize: '13px', marginBottom: '4px', display: 'block' }}>CVV (3 digits)</label>
                       <input type="password" required pattern="\d{3}" title="3 digit CVV" maxLength={3}
-                        placeholder="•••" className="productInput" style={{ width: '100%' }}
+                        placeholder="•••" className="auth-input" style={{ width: '100%' }}
                         value={paymentDetails.cvv || ''}
                         onChange={e => setPaymentDetails(d => ({ ...d, cvv: e.target.value.replace(/\D/g, '') }))}
                       />
@@ -434,7 +421,7 @@ function PaymentPage() {
                   </div>
                   <div>
                     <label style={{ color: 'var(--bone-55)', fontSize: '13px', marginBottom: '4px', display: 'block' }}>Card Holder Name</label>
-                    <input type="text" required placeholder="MEET PATEL" className="productInput" style={{ width: '100%', textTransform: 'uppercase' }}
+                    <input type="text" required placeholder="MEET PATEL" className="auth-input" style={{ width: '100%', textTransform: 'uppercase' }}
                       value={paymentDetails.holderName || ''}
                       onChange={e => setPaymentDetails(d => ({ ...d, holderName: e.target.value }))}
                     />
@@ -481,7 +468,7 @@ function PaymentPage() {
             <h2 style={{ color: 'var(--acid)', fontSize: '28px', marginBottom: '8px' }}>Payment Successful!</h2>
             <p style={{ color: 'var(--bone-55)', fontSize: '16px', marginBottom: '24px' }}>Thank you for your order booking!</p>
 
-            <div className="hot-deal-card" style={{ padding: '24px', cursor: 'default', textAlign: 'left', marginBottom: '24px' }}>
+            <div className="chart-card" style={{ padding: '24px', cursor: 'default', textAlign: 'left', marginBottom: '24px' }}>
               <h3 style={{ color: 'var(--bone)', marginBottom: '16px', fontSize: '16px' }}>📋 Order Details</h3>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '14px' }}>
@@ -502,14 +489,14 @@ function PaymentPage() {
 
                 {product && !fromCart && (
                   <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-                    <img src={product.imageUrl} alt={product.name} style={{ width: '50px', height: '50px', objectFit: 'contain', borderRadius: '6px', background: '#fff' }} />
+                    <img src={product.imageUrl} alt={product.name} style={{ width: '50px', height: '50px', objectFit: 'contain', borderRadius: '6px', background: 'rgba(244,241,234,0.03)' }} />
                     <div style={{ flex: 1, color: 'var(--bone)', fontSize: '14px' }}>{product.name}</div>
                     <div style={{ color: 'var(--acid)', fontWeight: 'bold' }}>₹{product.price.toLocaleString('en-IN')}</div>
                   </div>
                 )}
                 {fromCart && cartItems.map(item => (
                   <div key={item._id} style={{ display: 'flex', gap: '12px', alignItems: 'center', marginBottom: '6px' }}>
-                    <img src={item.product.imageUrl} alt={item.product.name} style={{ width: '40px', height: '40px', objectFit: 'contain', borderRadius: '6px', background: '#fff' }} />
+                    <img src={item.product.imageUrl} alt={item.product.name} style={{ width: '40px', height: '40px', objectFit: 'contain', borderRadius: '6px', background: 'rgba(244,241,234,0.03)' }} />
                     <div style={{ flex: 1, color: 'var(--bone)', fontSize: '13px' }}>{item.product.name} × {item.quantity}</div>
                     <div style={{ color: 'var(--acid)', fontWeight: 'bold', fontSize: '13px' }}>₹{(item.product.price * item.quantity).toLocaleString('en-IN')}</div>
                   </div>
@@ -541,7 +528,7 @@ function PaymentPage() {
             </div>
 
             <p style={{ color: 'var(--bone-55)', marginTop: '24px', fontSize: '14px', lineHeight: 1.6 }}>
-              Thank you for your order booking! 🙏<br/>
+              Thank you for your order booking! 🙏<br />
               Your order has been placed successfully.
             </p>
           </div>

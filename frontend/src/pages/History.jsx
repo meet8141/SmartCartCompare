@@ -26,7 +26,7 @@ function History() {
   }, [token]);
 
   return (
-    <div className="history-page">
+    <div className="page">
       {/* ── STICKY NAV ── */}
       <header className="nav">
         <div className="nav-inner">
@@ -34,7 +34,7 @@ function History() {
             <span className="brand-main">SMART</span>
 
             <span className="brand-accent">CART</span>
-            <span className="brand-main">COMPARE</span>
+            <span className="brand-main">Compare</span>
           </a>
           <div className="nav-right">
             <a href="/" className="nav-login">← Back to Compare</a>

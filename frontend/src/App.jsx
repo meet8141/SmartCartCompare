@@ -12,6 +12,7 @@ import SearchResults from './pages/SearchResults';
 import AdminDashboard from './pages/AdminDashboard';
 import AdminUsers from './pages/AdminUsers';
 import AdminAddProduct from './pages/AdminAddProduct';
+import AdminStoreStats from './pages/AdminStoreStats';
 import AdminRoute from './components/AdminRoute';
 import Compare from './pages/Compare';
 import StoreHome from './pages/StoreHome';
@@ -114,6 +115,14 @@ function App() {
             element={
               <AdminRoute>
                 <AdminDashboard />
+              </AdminRoute>
+            }
+          />
+          <Route
+            path="/admin/store-stats"
+            element={
+              <AdminRoute>
+                <AdminStoreStats />
               </AdminRoute>
             }
           />

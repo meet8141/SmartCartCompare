@@ -85,6 +85,7 @@ function AdminDashboard() {
             <span className="brand-accent">CART</span>
           </a>
           <div className="nav-right">
+            <Link to="/admin/store-stats" className="nav-login">Store Stats</Link>
             <Link to="/admin/add-product" className="nav-login">Add Product</Link>
             <Link to="/admin/users" className="nav-login">User Management</Link>
             <a href="/" className="nav-logout" style={{ textDecoration: 'none', padding: '7px 16px', borderRadius: '999px', border: '2px solid var(--bone-30)', color: 'var(--bone-75)', fontSize: '13px', fontWeight: '700', fontFamily: "'Archivo', sans-serif", transition: 'border-color 0.2s, color 0.2s' }}
@@ -208,9 +209,9 @@ function AdminDashboard() {
                 onChange={(e) => setTimeRange(e.target.value)}
                 className="chart-select"
               >
-                <option value="24h">Past 24 Hours</option>
-                <option value="7d">Past 7 Days</option>
-                <option value="30d">Last Month</option>
+                <option value="24h" style={{ backgroundColor: "#000" }}>Past 24 Hours</option>
+                <option value="7d" style={{ backgroundColor: "#000" }}>Past 7 Days</option>
+                <option value="30d" style={{ backgroundColor: "#000" }}>Last Month</option>
               </select>
             </div>
             <div style={{ width: '100%', height: 350 }}>

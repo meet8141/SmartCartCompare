@@ -43,7 +43,7 @@ function AdminAddProduct() {
       data.append('stock', formData.stock ? formData.stock : 50);
       data.append('category', formData.category);
       data.append('subCategory', formData.subCategory);
-      
+
       if (imageFile) {
         data.append('image', imageFile);
       } else if (formData.imageUrl) {
@@ -77,7 +77,7 @@ function AdminAddProduct() {
   };
 
   return (
-    <div style={{ background: 'var(--ink)', minHeight: '100vh' }}>
+    <div className="page">
       {/* ── NAV ── */}
       <header className="nav">
         <div className="nav-inner">
@@ -97,52 +97,53 @@ function AdminAddProduct() {
           ADD <span style={{ color: 'var(--acid)' }}>PRODUCT.</span>
         </h1>
 
+
         {message && <div className="statusBar success">{message}</div>}
         {error && <div className="statusBar err">{error}</div>}
 
         <form onSubmit={handleSubmit} className="chart-card" style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginTop: '24px' }}>
           <div>
-            <label style={{ color: 'var(--bone-55)', fontSize: '14px', marginBottom: '8px', display: 'block' }}>Name</label>
-            <input type="text" name="name" value={formData.name} onChange={handleChange} required className="productInput" style={{ width: '100%' }} />
+            <label className="auth-label" style={{ marginBottom: '8px', display: 'block' }}>Name</label>
+            <input type="text" name="name" value={formData.name} onChange={handleChange} required className="auth-input" style={{ width: '100%' }} />
           </div>
 
           <div>
-            <label style={{ color: 'var(--bone-55)', fontSize: '14px', marginBottom: '8px', display: 'block' }}>Description</label>
-            <textarea name="description" value={formData.description} onChange={handleChange} required className="productInput" style={{ width: '100%', minHeight: '80px', padding: '12px' }} />
+            <label className="auth-label" style={{ marginBottom: '8px', display: 'block' }}>Description</label>
+            <textarea name="description" value={formData.description} onChange={handleChange} required className="auth-input" style={{ width: '100%', minHeight: '80px', padding: '12px' }} />
           </div>
 
           <div style={{ display: 'flex', gap: '16px' }}>
             <div style={{ flex: 1 }}>
-              <label style={{ color: 'var(--bone-55)', fontSize: '14px', marginBottom: '8px', display: 'block' }}>Price (₹)</label>
-              <input type="number" name="price" value={formData.price} onChange={handleChange} required className="productInput" style={{ width: '100%' }} />
+              <label className="auth-label" style={{ marginBottom: '8px', display: 'block' }}>Price (₹)</label>
+              <input type="number" name="price" value={formData.price} onChange={handleChange} required className="auth-input" style={{ width: '100%' }} />
             </div>
             <div style={{ flex: 1 }}>
-              <label style={{ color: 'var(--bone-55)', fontSize: '14px', marginBottom: '8px', display: 'block' }}>Stock</label>
-              <input type="number" name="stock" value={formData.stock} onChange={handleChange} placeholder="50" className="productInput" style={{ width: '100%' }} />
+              <label className="auth-label" style={{ marginBottom: '8px', display: 'block' }}>Stock</label>
+              <input type="number" name="stock" value={formData.stock} onChange={handleChange} placeholder="50" className="auth-input" style={{ width: '100%' }} />
             </div>
           </div>
 
           <div style={{ display: 'flex', gap: '16px' }}>
             <div style={{ flex: 1 }}>
-              <label style={{ color: 'var(--bone-55)', fontSize: '14px', marginBottom: '8px', display: 'block' }}>Category</label>
-              <select name="category" value={formData.category} onChange={handleChange} className="productInput" style={{ width: '100%', appearance: 'auto' }}>
+              <label className="auth-label" style={{ marginBottom: '8px', display: 'block' }}>Category</label>
+              <select name="category" value={formData.category} onChange={handleChange} className="auth-input" style={{ width: '100%', appearance: 'auto' }}>
                 {categories.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
             <div style={{ flex: 1 }}>
-              <label style={{ color: 'var(--bone-55)', fontSize: '14px', marginBottom: '8px', display: 'block' }}>Sub Category</label>
-              <input type="text" name="subCategory" value={formData.subCategory} onChange={handleChange} placeholder="General / Men / Women / Kids" className="productInput" style={{ width: '100%' }} />
+              <label className="auth-label" style={{ marginBottom: '8px', display: 'block' }}>Sub Category</label>
+              <input type="text" name="subCategory" value={formData.subCategory} onChange={handleChange} placeholder="General / Men / Women / Kids" className="auth-input" style={{ width: '100%' }} />
             </div>
           </div>
 
           <div style={{ display: 'flex', gap: '16px' }}>
             <div style={{ flex: 1 }}>
-              <label style={{ color: 'var(--bone-55)', fontSize: '14px', marginBottom: '8px', display: 'block' }}>Upload Image (Optional)</label>
-              <input type="file" accept="image/*" id="imageFileInput" onChange={handleFileChange} className="productInput" style={{ width: '100%', padding: '10px' }} />
+              <label className="auth-label" style={{ marginBottom: '8px', display: 'block' }}>Upload Image (Optional)</label>
+              <input type="file" accept="image/*" id="imageFileInput" onChange={handleFileChange} className="auth-input" style={{ width: '100%', padding: '10px' }} />
             </div>
             <div style={{ flex: 1 }}>
-              <label style={{ color: 'var(--bone-55)', fontSize: '14px', marginBottom: '8px', display: 'block' }}>Or Image URL</label>
-              <input type="url" name="imageUrl" value={formData.imageUrl} onChange={handleChange} placeholder="https://..." className="productInput" style={{ width: '100%' }} disabled={!!imageFile} />
+              <label className="auth-label" style={{ marginBottom: '8px', display: 'block' }}>Or Image URL</label>
+              <input type="url" name="imageUrl" value={formData.imageUrl} onChange={handleChange} placeholder="https://..." className="auth-input" style={{ width: '100%' }} disabled={!!imageFile} />
             </div>
           </div>
 
@@ -150,6 +151,7 @@ function AdminAddProduct() {
             {loading ? 'Adding...' : 'Add Product'}
           </button>
         </form>
+
       </div>
     </div>
   );

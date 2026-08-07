@@ -40,18 +40,21 @@ function StoreHome() {
         </div>
         
         <div className="bento-grid">
-          {CATEGORIES.map(cat => (
-            <div 
-              key={cat.name}
-              className="bento-tile" 
-              style={{ backgroundColor: 'var(--card-bg)', border: `1px solid ${cat.color}` }}
-              onClick={() => navigate(`/store/category/${cat.name}`)}
-            >
-              <div className="bento-icon" style={{ fontSize: '40px' }}>{cat.icon}</div>
-              <div className="bento-label" style={{ color: cat.color }}>{cat.name.toUpperCase()}</div>
-              <div className="bento-sub">Explore mock {cat.name.toLowerCase()} products</div>
-            </div>
-          ))}
+          {CATEGORIES.map((cat, index) => {
+            const bentoClasses = ['bento-tile-acid', 'bento-tile-ink', 'bento-tile-hot', 'bento-tile-bone'];
+            const assignedClass = bentoClasses[index % bentoClasses.length];
+            return (
+              <div 
+                key={cat.name}
+                className={`bento-tile ${assignedClass}`} 
+                onClick={() => navigate(`/store/category/${cat.name}`)}
+              >
+                <div className="bento-icon" style={{ fontSize: '40px' }}>{cat.icon}</div>
+                <div className="bento-label">{cat.name.toUpperCase()}</div>
+                <div className="bento-sub">Explore mock {cat.name.toLowerCase()} products</div>
+              </div>
+            );
+          })}
         </div>
       </div>
     </div>

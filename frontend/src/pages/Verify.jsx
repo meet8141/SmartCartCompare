@@ -53,7 +53,7 @@ function Verify() {
 
   if (success) {
     return (
-      <div className="auth-page grain" style={{ background: 'var(--ink)' }}>
+      <div className="auth-page grain">
         <div className="auth-card" style={{ textAlign: 'center' }}>
           <div style={{ fontSize: '52px', marginBottom: '20px' }}>✅</div>
           <h2 style={{
@@ -79,7 +79,7 @@ function Verify() {
   }
 
   return (
-    <div className="auth-page grain" style={{ background: 'var(--ink)' }}>
+    <div className="auth-page grain">
       {/* Blobs */}
       <div style={{
         position: 'absolute', width: '100px', height: '60px',

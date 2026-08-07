@@ -52,7 +52,7 @@ function Checkout() {
       <div className="section" style={{ paddingTop: '100px', maxWidth: '600px', margin: '0 auto' }}>
         <h2 className="section-title">CHECKOUT <span style={{ color: 'var(--hot)' }}>PAYMENT</span></h2>
         
-        <form onSubmit={handleCheckout} className="hot-deal-card" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px', cursor: 'default' }}>
+        <form onSubmit={handleCheckout} className="chart-card" style={{ display: 'flex', flexDirection: 'column', gap: '20px', cursor: 'default' }}>
           
           <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
             {['GPay', 'NetBanking', 'DebitCard'].map(method => (
@@ -79,7 +79,7 @@ function Checkout() {
                   pattern=".*@paytm$"
                   title="Must end with @paytm as requested"
                   placeholder="number@paytm" 
-                  className="productInput"
+                  className="auth-input"
                   style={{ width: '100%' }}
                   onChange={(e) => setDetails({ upiId: e.target.value })}
                 />
@@ -91,7 +91,7 @@ function Checkout() {
                 <label style={{ color: 'var(--bone-55)', fontSize: '14px', marginBottom: '8px', display: 'block' }}>Select Bank</label>
                 <select 
                   required 
-                  className="productInput" 
+                  className="auth-input" 
                   style={{ width: '100%', appearance: 'auto' }}
                   onChange={(e) => setDetails({ bank: e.target.value })}
                 >
@@ -108,21 +108,21 @@ function Checkout() {
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 <div>
                   <label style={{ color: 'var(--bone-55)', fontSize: '14px', marginBottom: '4px', display: 'block' }}>Card Number</label>
-                  <input type="text" required pattern="\d{16}" title="16 digit card number" placeholder="1234 5678 9101 1121" className="productInput" style={{ width: '100%' }} onChange={(e) => setDetails({...details, cardNumber: e.target.value})} />
+                  <input type="text" required pattern="\d{16}" title="16 digit card number" placeholder="1234 5678 9101 1121" className="auth-input" style={{ width: '100%' }} onChange={(e) => setDetails({...details, cardNumber: e.target.value})} />
                 </div>
                 <div style={{ display: 'flex', gap: '12px' }}>
                   <div style={{ flex: 1 }}>
                     <label style={{ color: 'var(--bone-55)', fontSize: '14px', marginBottom: '4px', display: 'block' }}>Expiry (MM/YY)</label>
-                    <input type="text" required pattern="\d{2}/\d{2}" placeholder="12/26" className="productInput" style={{ width: '100%' }} onChange={(e) => setDetails({...details, expiry: e.target.value})} />
+                    <input type="text" required pattern="\d{2}/\d{2}" placeholder="12/27" className="auth-input" style={{ width: '100%' }} onChange={(e) => setDetails({...details, expiry: e.target.value})} />
                   </div>
                   <div style={{ flex: 1 }}>
                     <label style={{ color: 'var(--bone-55)', fontSize: '14px', marginBottom: '4px', display: 'block' }}>CVV</label>
-                    <input type="text" required pattern="\d{3}" title="3 digit CVV" placeholder="123" className="productInput" style={{ width: '100%' }} onChange={(e) => setDetails({...details, cvv: e.target.value})} />
+                    <input type="text" required pattern="\d{3}" title="3 digit CVV" placeholder="123" className="auth-input" style={{ width: '100%' }} onChange={(e) => setDetails({...details, cvv: e.target.value})} />
                   </div>
                 </div>
                 <div>
                   <label style={{ color: 'var(--bone-55)', fontSize: '14px', marginBottom: '4px', display: 'block' }}>Card Holder Name</label>
-                  <input type="text" required placeholder="John Doe" className="productInput" style={{ width: '100%' }} onChange={(e) => setDetails({...details, holderName: e.target.value})} />
+                  <input type="text" required placeholder="John Doe" className="auth-input" style={{ width: '100%' }} onChange={(e) => setDetails({...details, holderName: e.target.value})} />
                 </div>
               </div>
             )}

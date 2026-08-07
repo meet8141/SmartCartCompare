@@ -137,6 +137,28 @@ body {
 .pill-primary:active { transform: translateY(0); }
 .pill-primary:disabled { opacity: 0.35; cursor: not-allowed; transform: none; }
 
+.pill-hot {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-family: 'Archivo', sans-serif;
+  font-size: 14px; font-weight: 800;
+  letter-spacing: 0.02em;
+  padding: 13px 28px;
+  border-radius: 999px;
+  border: none;
+  background: var(--hot);
+  color: var(--bone);
+  cursor: pointer;
+  text-decoration: none;
+  transition: background 0.2s, transform 0.15s, color 0.2s, box-shadow 0.15s;
+}
+.pill-hot:hover {
+  background: var(--acid);
+  color: var(--ink);
+  transform: translateY(-2px);
+}
+.pill-hot:active { transform: translateY(0); }
+.pill-hot:disabled { opacity: 0.35; cursor: not-allowed; transform: none; }
+
 .pill-ghost {
   display: inline-flex; align-items: center; gap: 8px;
   font-family: 'Archivo', sans-serif;

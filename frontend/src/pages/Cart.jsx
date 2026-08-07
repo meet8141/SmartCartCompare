@@ -61,16 +61,18 @@ function Cart() {
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
             {cart.items.map(item => (
-              <div key={item._id} className="hot-deal-card" style={{ display: 'flex', alignItems: 'center', gap: '16px', padding: '16px', flexDirection: 'row', cursor: 'default' }}>
-                <img src={item.product.imageUrl} alt={item.product.name} style={{ width: '80px', height: '80px', objectFit: 'cover', borderRadius: '8px' }} />
-                <div style={{ flex: 1 }}>
-                  <h3 style={{ margin: 0, color: 'var(--bone)' }}>{item.product.name}</h3>
-                  <div style={{ color: 'var(--bone-55)', fontSize: '14px' }}>Qty: {item.quantity}</div>
+              <div key={item._id} className="product-card compact">
+                <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flex: 1 }}>
+                  <img src={item.product.imageUrl} alt={item.product.name} style={{ width: '80px', height: '80px', objectFit: 'contain', borderRadius: '8px', background: 'rgba(244,241,234,0.03)' }} />
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    <h3 className="card-name" style={{ fontSize: '15px' }}>{item.product.name}</h3>
+                    <div style={{ color: 'var(--bone-55)', fontSize: '13px' }}>Qty: {item.quantity}</div>
+                  </div>
                 </div>
-                <div style={{ fontSize: '20px', fontWeight: 'bold', color: 'var(--acid)' }}>
-                  ₹{item.product.price * item.quantity}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                  <span className="price-current" style={{ fontSize: '20px' }}>₹{item.product.price * item.quantity}</span>
+                  <button className="pill-ghost" style={{ padding: '8px 16px' }} onClick={() => removeFromCart(item.product._id)}>Remove</button>
                 </div>
-                <button className="nav-logout" style={{ marginLeft: '16px' }} onClick={() => removeFromCart(item.product._id)}>Remove</button>
               </div>
             ))}
             

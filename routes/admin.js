@@ -3,6 +3,10 @@ const router = express.Router();
 const User = require('../models/User');
 const SearchHistory = require('../models/SearchHistory');
 const UserLog = require('../models/UserLog');
+const Order = require('../models/Order');
+const StoreProduct = require('../models/StoreProduct');
+const Wishlist = require('../models/Wishlist');
+const Cart = require('../models/Cart');
 const { auth, adminAuth } = require('../middleware/auth');
 
 // Protect all admin routes
@@ -196,6 +200,170 @@ router.get('/logs', async (req, res) => {
     res.json(logs);
   } catch (err) {
     res.status(500).json({ error: 'Failed to load logs' });
+  }
+});
+
+// GET /api/admin/store-stats
+router.get('/store-stats', async (req, res) => {
+  try {
+    // 1. Revenue & Orders
+    const orders = await Order.find().populate('user', 'username email');
+    const totalOrders = orders.length;
+    let totalRevenue = 0;
+    
+    const paymentMethods = { GPay: 0, NetBanking: 0, DebitCard: 0 };
+    const paymentProducts = { GPay: {}, NetBanking: {}, DebitCard: {} }; // method -> productId -> quantity
+    const recentOrders = orders.sort((a, b) => b.createdAt - a.createdAt).slice(0, 8);
+    
+    const productSales = {}; // productId -> { name, quantity, revenue }
+    
+    const now = new Date();
+    const past24h = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    const past7d = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const past30d = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+    let rev24h = 0;
+    let rev7d = 0;
+    let rev30d = 0;
+    
+    orders.forEach(order => {
+      totalRevenue += order.totalAmount;
+      if (paymentMethods[order.paymentMethod] !== undefined) {
+        paymentMethods[order.paymentMethod]++;
+      }
+      
+      const orderDate = new Date(order.createdAt);
+      if (orderDate >= past24h) rev24h += order.totalAmount;
+      if (orderDate >= past7d) rev7d += order.totalAmount;
+      if (orderDate >= past30d) rev30d += order.totalAmount;
+      
+      order.items.forEach(item => {
+        const pId = item.product.toString();
+        if (!productSales[pId]) {
+          productSales[pId] = { id: pId, quantity: 0, revenue: 0 };
+        }
+        productSales[pId].quantity += item.quantity;
+        productSales[pId].revenue += item.priceAtPurchase * item.quantity;
+        
+        if (paymentProducts[order.paymentMethod]) {
+          paymentProducts[order.paymentMethod][pId] = (paymentProducts[order.paymentMethod][pId] || 0) + item.quantity;
+        }
+      });
+    });
+    
+    const revenuePeriods = { past24h: rev24h, past7d: rev7d, past30d: rev30d };
+    
+    const aov = totalOrders > 0 ? (totalRevenue / totalOrders).toFixed(2) : 0;
+    
+    // 2. Inventory Health & Category Breakdown
+    const products = await StoreProduct.find();
+    const totalActiveProducts = products.length;
+    const lowStockAlerts = products.filter(p => p.stock < 10).map(p => ({ id: p._id, name: p.name, stock: p.stock }));
+    
+    let outOfStock = 0;
+    let lowStockCount = 0;
+    let healthyStock = 0;
+    const inventoryDetails = { OutOfStock: [], LowStock: [], Healthy: [] };
+    
+    products.forEach(p => {
+      if (p.stock <= 0) {
+        outOfStock++;
+        inventoryDetails.OutOfStock.push({ name: p.name, stock: p.stock });
+      }
+      else if (p.stock < 10) {
+        lowStockCount++;
+        inventoryDetails.LowStock.push({ name: p.name, stock: p.stock });
+      }
+      else {
+        healthyStock++;
+        // Healthy lists can be very large, maybe only keep top 20 or we just send it. Let's limit healthy list to avoid huge payloads
+        if (healthyStock <= 50) inventoryDetails.Healthy.push({ name: p.name, stock: p.stock });
+      }
+    });
+    const inventoryHealth = { OutOfStock: outOfStock, LowStock: lowStockCount, Healthy: healthyStock };
+    
+    const categoryRevenue = {};
+    const productMap = {}; // id -> name
+    products.forEach(p => {
+      productMap[p._id.toString()] = { name: p.name, category: p.category };
+    });
+    
+    Object.values(productSales).forEach(ps => {
+      if (productMap[ps.id]) {
+        ps.name = productMap[ps.id].name;
+        const cat = productMap[ps.id].category || 'Other';
+        categoryRevenue[cat] = (categoryRevenue[cat] || 0) + ps.revenue;
+      } else {
+        ps.name = 'Unknown Product';
+      }
+    });
+    
+    const paymentMethodsDetails = {};
+    for (const [method, prods] of Object.entries(paymentProducts)) {
+      paymentMethodsDetails[method] = Object.entries(prods)
+        .map(([id, qty]) => ({ name: productMap[id]?.name || 'Unknown', quantity: qty }))
+        .sort((a,b) => b.quantity - a.quantity)
+        .slice(0, 10); // top 10 products per method
+    }
+    
+    const topProducts = Object.values(productSales)
+      .sort((a, b) => b.revenue - a.revenue)
+      .slice(0, 5);
+      
+    // 3. User Engagement
+    const wishlists = await Wishlist.find();
+    const wishlistCounts = {};
+    wishlists.forEach(w => {
+      w.items.forEach(itemId => {
+        const idStr = itemId.toString();
+        wishlistCounts[idStr] = (wishlistCounts[idStr] || 0) + 1;
+      });
+    });
+    
+    const mostWishlisted = Object.keys(wishlistCounts)
+      .map(id => ({ id, count: wishlistCounts[id], name: productMap[id]?.name || 'Unknown' }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 5);
+      
+    const carts = await Cart.find();
+    const activeCarts = carts.filter(c => c.items.length > 0).length;
+
+    res.json({
+      revenue: {
+        total: totalRevenue,
+        orders: totalOrders,
+        aov: Number(aov)
+      },
+      inventory: {
+        health: inventoryHealth,
+        details: inventoryDetails,
+        lowStock: lowStockAlerts
+      },
+      sales: {
+        topProducts,
+        categoryRevenue: Object.keys(categoryRevenue).map(cat => ({ name: cat, value: categoryRevenue[cat] })),
+        revenuePeriods
+      },
+      engagement: {
+        mostWishlisted,
+        activeCarts
+      },
+      operations: {
+        recentOrders: recentOrders.map(o => ({
+          _id: o._id,
+          user: o.user?.username || 'Guest',
+          amount: o.totalAmount,
+          method: o.paymentMethod,
+          status: o.status,
+          date: o.createdAt
+        })),
+        paymentMethods,
+        paymentMethodsDetails
+      }
+    });
+  } catch (err) {
+    console.error('Store stats error:', err);
+    res.status(500).json({ error: 'Failed to load store stats' });
   }
 });
 

@@ -13,7 +13,7 @@ function StoreNavbar() {
             <span className="brand-accent">CART</span>
             <span className="brand-main">Compare</span>
           </a>
-          <div className="nav-badge" style={{ backgroundColor: 'var(--acid)', color: 'var(--ink)' }}>
+          <div className="nav-badge">
             <span>🛒</span>
             <span>Mock Store</span>
           </div>
